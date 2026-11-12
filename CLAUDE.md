@@ -19,4 +19,8 @@
   `public/style.css`: they aren't Prettier-formatted and it rewrites them
   wholesale. `tests/golden/` is excluded via `.prettierignore`.
 - Line endings are LF (`.gitattributes`).
+- Every push to `main` deploys to GitHub Pages
+  (https://thecarow.github.io/CentralHeatingSim/) via
+  `.github/workflows/pages.yml`; the build uses relative paths
+  (`base: "./"` in `vite.config.ts`) so it works under `/CentralHeatingSim/`.
 - Code layout and the model are described in `README.md`.

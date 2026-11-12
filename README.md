@@ -3,6 +3,8 @@
 An educational simulation of one to three rooms heated by a combi boiler,
 drawn with [PixiJS 8](https://pixijs.com/) (Vite + TypeScript template).
 
+**Try it:** <https://thecarow.github.io/CentralHeatingSim/>
+
 ## Run
 
 ```bash
@@ -11,6 +13,9 @@ npm run dev      # http://localhost:8080
 npm run build    # lint + type-check + production build into dist/
 npm test         # simulation tests (Vitest)
 ```
+
+Every push to `main` runs the tests, builds the site and publishes it to
+GitHub Pages (`.github/workflows/pages.yml`).
 
 `npm test` includes a golden-value test that pins the one-room behaviour to
 recorded values (`tests/golden/sim-baseline.json`). Re-record it with

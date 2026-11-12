@@ -16,6 +16,10 @@
     <header class="topbar">
       <h1>Combi Heating Simulator</h1>
       <div class="simbar" aria-label="Simulation controls">
+        <div class="rooms-picker">
+          <span class="rooms-label" id="rooms-label">Rooms</span>
+          <div class="seg" id="rooms" role="radiogroup" aria-labelledby="rooms-label"></div>
+        </div>
         <span id="clock" class="clock" hidden>Day 1 · 06:00</span><!-- hidden for now -->
         <button id="btn-play" class="btn icon-btn" type="button" aria-pressed="false" aria-label="Pause">
           <span class="icon-pause" aria-hidden="true"></span>
@@ -44,10 +48,6 @@
               <button id="i-power" class="switch" type="button" role="switch" aria-checked="true" aria-labelledby="power-label">
                 <span class="knob"></span>
               </button>
-            </div>
-            <div class="ctl ctl-rooms">
-              <span class="ctl-label" id="rooms-label">Rooms</span>
-              <div class="seg" id="rooms" role="radiogroup" aria-labelledby="rooms-label"></div>
             </div>
             <div class="ctl ctl-flow">
               <label class="ctl-label" for="i-flow">Flow temp <output id="o-flow">65 °C</output></label>

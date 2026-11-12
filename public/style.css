@@ -154,7 +154,25 @@ h1 {
   border-bottom: 7px solid transparent;
 }
 
-/* segmented radio groups (speed, TRV, insulation) */
+/* number of rooms, at the start of the top bar */
+.rooms-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: 8px;
+}
+
+.rooms-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.rooms-picker .seg button {
+  min-width: 30px;
+}
+
+/* segmented radio groups (rooms, speed, TRV, insulation) */
 .seg {
   display: inline-flex;
   padding: 2px;
@@ -238,8 +256,8 @@ summary:focus-visible {
 /* Whole-house settings in one strip, then one row per radiator. */
 .controls {
   display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.6fr) minmax(0, 1fr);
-  grid-template-areas: "power rooms flow stat ins out";
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.6fr) minmax(0, 1fr);
+  grid-template-areas: "power flow stat ins out";
   gap: 12px 20px;
   padding: 12px 16px;
   border-top: 1px solid var(--border);
@@ -257,15 +275,10 @@ summary:focus-visible {
 }
 
 .ctl-power { grid-area: power; }
-.ctl-rooms { grid-area: rooms; }
 .ctl-flow { grid-area: flow; }
 .ctl-stat { grid-area: stat; }
 .ctl-ins { grid-area: ins; }
 .ctl-out { grid-area: out; }
-
-.ctl-rooms .seg button {
-  min-width: 34px;
-}
 
 .radiators {
   display: grid;
@@ -287,20 +300,20 @@ summary:focus-visible {
   color: var(--text-primary);
 }
 
-/* Medium widths: power, rooms and sliders on one row; insulation below. */
+/* Medium widths: power and sliders on one row; insulation below. */
 @media (max-width: 1180px) {
   .controls {
-    grid-template-columns: auto auto minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-columns: auto repeat(3, minmax(0, 1fr));
     grid-template-areas:
-      "power rooms flow stat"
-      "ins ins ins out";
+      "power flow stat out"
+      "ins ins ins ins";
   }
 }
 
 @media (max-width: 560px) {
   .controls {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-areas: "power" "rooms" "flow" "stat" "ins" "out";
+    grid-template-areas: "power" "flow" "stat" "ins" "out";
   }
   .rad-row {
     grid-template-columns: minmax(0, 1fr);

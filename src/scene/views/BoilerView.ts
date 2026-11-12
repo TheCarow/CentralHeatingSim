@@ -15,6 +15,7 @@ import {
 } from "../context";
 import { distToPolyline, inRect, type Pt } from "../geometry";
 import type { Hit } from "../hit";
+import { onPowerButton, powerButton, powerTint } from "./powerButton";
 
 const SHOW_FLUE = false; // exhaust flue on top of the boiler, hidden for now
 const SHOW_GAS_PIPE = false; // gas supply stub under the boiler, hidden for now
@@ -57,7 +58,7 @@ export class BoilerView implements View {
   /** Time as the flames see it: runs at flickerRate(speed). */
   private flameClock = 0;
   private readonly impeller = new Graphics();
-  private readonly powerBtn = new Graphics();
+  private readonly powerBtn: Graphics;
   private readonly displayTemp: Text;
   private readonly displayStatus: Text;
 
@@ -146,16 +147,7 @@ export class BoilerView implements View {
       ay: 0.5,
       spacing: 0.5,
     });
-    // Power button: tinted green (on) or grey (off); glyph stays white.
-    const pw = bl.power;
-    this.powerBtn.circle(pw.x, pw.y, pw.r).fill(0xffffff);
-    const glyph = new Graphics()
-      .arc(pw.x, pw.y + 0.5, 4.3, -Math.PI / 2 + 0.75, (3 * Math.PI) / 2 - 0.75)
-      .stroke({ width: 1.6, color: 0xffffff, cap: "round" })
-      .moveTo(pw.x, pw.y - 5)
-      .lineTo(pw.x, pw.y - 0.5)
-      .stroke({ width: 1.6, color: 0xffffff, cap: "round" });
-    devices.addChild(this.powerBtn, glyph);
+    this.powerBtn = powerButton(devices, bl.power);
 
     if (SHOW_GAS_PIPE)
       ctx.label("Gas", bl.gasX, bl.bottom + 42, {
@@ -192,7 +184,7 @@ export class BoilerView implements View {
           intensity * (0.82 + 0.18 * Math.sin(this.flameClock * 17 + i * 1.9)),
         );
     });
-    this.powerBtn.tint = p.boilerOn ? 0x16a34a : 0x9ca3af;
+    this.powerBtn.tint = powerTint(p.boilerOn);
 
     if (f.refreshText) {
       this.displayTemp.text = p.boilerOn ? `${p.flowSet}°C` : "";
@@ -204,8 +196,7 @@ export class BoilerView implements View {
     const bl = this.ctx.lay.boiler;
     const c = this.ctx.sim.circuit;
     if (pass === "device") {
-      if (Math.hypot(p.x - bl.power.x, p.y - bl.power.y) <= bl.power.r + 3)
-        return { kind: "power" };
+      if (onPowerButton(p, bl.power)) return { kind: "power" };
       if (inRect(p, bl.display)) return { kind: "display" };
       if (Math.hypot(p.x - bl.pump.x, p.y - bl.pump.y) <= bl.pump.r + 2)
         return { kind: "pump" };

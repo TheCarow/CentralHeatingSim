@@ -23,20 +23,32 @@ recorded values (`tests/golden/sim-baseline.json`). Re-record it with
 
 ## What you can change
 
-| Control | Where |
-|---|---|
-| Rooms (1–3, in a row) | buttons; changing it cold-starts the house |
-| Boiler on/off | switch, or the green power button on the boiler |
-| Boiler flow temperature (30–80 °C) | slider, or click/scroll the boiler |
-| Room thermostat (5–30 °C) | slider, or scroll the thermostat; click it to switch heating on/off |
-| Lockshield (10–100 %, 10 % steps), per radiator | slider in that radiator's row, or click/scroll the lockshield |
-| TRV head setting (0, ❄, 1–5), per radiator | buttons in that radiator's row, or click/scroll the TRV |
-| Insulation (Poor → Excellent) | buttons |
-| Outside temperature (−15–25 °C) | slider, or click/scroll the outside area |
-| Day/night cycle (optional) | checkbox under Outside: the outside temperature swings ±4 °C around the slider's value, coldest around 3 am and warmest around 3 pm; the sky darkens at night and a clock shows the time of day |
+Hover something you can change and a bubble beside it shows its live
+details; it stays put rather than following the pointer. Click (or tap)
+it and the bubble stays open with the object's controls under the details.
+Click the object again, click elsewhere or press Escape to close it.
 
-Shift+click turns a device down. Hover anything in the diagram for live
-details. Pipe colour runs blue (10 °C) to red (80 °C).
+| Object | Controls |
+|---|---|
+| Boiler | power on/off, flow temperature (30–80 °C) |
+| Room thermostat | heating on/off, set temperature (5–30 °C) |
+| A TRV | head setting (0, ❄, 1–5) for that radiator |
+| A lockshield | how far open (10–100 %, 10 % steps) for that radiator |
+| Outside | outside temperature (−15–25 °C) and the day/night cycle: the outside temperature swings ±4 °C around the chosen value, coldest around 3 am and warmest around 3 pm; the sky darkens at night and a clock shows the time of day |
+| Walls or loft | insulation (Poor → Excellent) |
+
+The boiler's and thermostat's bubbles always open below them. The green
+power buttons on the boiler and the thermostat switch them straight away.
+Scrolling over the boiler, thermostat, a TRV, a lockshield or the outside
+turns it up or down a notch. Radiator water shows its details in a bubble
+above the radiator; the pipes have a tooltip that follows the pointer.
+Bubbles and tooltips fade quickly in and out. Water colour runs like a
+thermal camera's, from deep blue (10 °C) through violet, magenta and red to
+orange (80 °C), getting lighter as it warms so that small differences show.
+
+The top bar has the number of rooms (1–3, in a row), the speed, **Reset**,
+and two view options: **Heat loss** (arrows showing where heat escapes)
+and **Details** (fuller tooltips).
 
 **Reset** restarts from cold: the rooms, water and pipes all at the outside
 temperature, as when the page opens. Changing the number
@@ -46,7 +58,6 @@ still there, and cold-starts the new house.
 With more than one room the thermostat hangs in room 1. The other rooms show
 their temperature on the wall but are controlled only by their TRVs, so they
 stop warming whenever room 1 is warm enough and the boiler switches off.
-Their tooltips say so.
 
 The history chart and table are hidden for now (`hidden` on `#history` in
 `index.html`).
@@ -96,9 +107,11 @@ with its neighbours.
 ## Drawing
 
 One room fills a 1200 × 700 drawing. With two or three rooms they share a
-drawing about 1500 wide, so each room is narrower, and the canvas takes the
-drawing's shape. Each radiator's lockshield pipe drops through the flow pipe
-on its way to the return; it is drawn passing in front, so the two pipes
+drawing about 1500 wide, so each room is narrower. Like a game screen, the
+drawing fills the window under the top bar, scaled to fit and centred (at
+the top on a portrait screen); the page itself doesn't scroll. Each
+radiator's lockshield pipe drops through the flow pipe on its way to the
+return; it is drawn passing in front, so the two pipes
 don't look joined.
 
 ## Layout
@@ -116,6 +129,10 @@ src/scene/views/          one view per part: fabric & weather, pipe network,
 src/scene/hit.ts          what the pointer is over (with the room it belongs to)
 src/scene/TrvCutaway.ts   magnified TRV valve (currently hidden)
 src/chart/HistoryChart.ts PixiJS 6-hour history chart
-src/ui/                   controls, tooltip text
+src/ui/targets.ts         what each click opens, and what its card points at
+src/ui/deviceCard.ts      the bubble beside an object: details, then controls
+src/ui/placement.ts       where that bubble goes
+src/ui/settings.ts        setting ranges; scrolling and power-button changes
+src/ui/                   also: top bar, tooltip text
 tests/                    Vitest: golden one-room values, multi-room invariants, layout
 ```

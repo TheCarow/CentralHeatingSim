@@ -1,5 +1,7 @@
 /*
- * The room thermostat on the wall of the thermostat room.
+ * The room thermostat on the wall of the thermostat room: a screen with
+ * the room temperature and set-point, a "calling" light with the status,
+ * and a power button like the boiler's.
  */
 import { Graphics, type Text } from "pixi.js";
 import {
@@ -11,11 +13,13 @@ import {
 } from "../context";
 import { inRect, type Pt } from "../geometry";
 import type { Hit } from "../hit";
+import { onPowerButton, powerButton, powerTint } from "./powerButton";
 
 export class ThermostatView implements View {
   private readonly ctx: SceneContext;
   private readonly screen = new Graphics();
   private readonly led = new Graphics();
+  private readonly powerBtn: Graphics;
   private readonly temp: Text;
   private readonly set: Text;
   private readonly state: Text;
@@ -29,8 +33,11 @@ export class ThermostatView implements View {
       .stroke({ width: 1.5, color: 0xb9b2a6 });
     // Screen is tinted: pale green when on, grey when switched off.
     this.screen.roundRect(T.x + 8, T.y + 8, T.w - 16, 40, 4).fill(0xffffff);
-    this.led.circle(T.x + T.w - 14, T.y + T.h - 11, 4).fill(0xffffff);
+    // Bottom strip: calling light and status on the left, power on the right.
+    const stripY = ctx.lay.thermostatPower.y;
+    this.led.circle(T.x + 13, stripY, 3.5).fill(0xffffff);
     ctx.layers.devices.addChild(g, this.screen, this.led);
+    this.powerBtn = powerButton(ctx.layers.devices, ctx.lay.thermostatPower);
     this.temp = ctx.label("", T.x + T.w / 2, ctx.lay.thermoReadY, {
       size: 20,
       weight: "700",
@@ -45,7 +52,7 @@ export class ThermostatView implements View {
       ax: 0.5,
       ay: 0.5,
     });
-    this.state = ctx.label("", T.x + 10, T.y + T.h - 11, {
+    this.state = ctx.label("", T.x + 21, stripY, {
       size: 9,
       weight: "600",
       color: MUTED,
@@ -58,6 +65,7 @@ export class ThermostatView implements View {
     const p = sim.params;
     this.led.tint = sim.demand ? 0xe34948 : 0xc9c4ba;
     this.screen.tint = p.thermostatOn ? 0xe9f0ec : 0xd0d3d1;
+    this.powerBtn.tint = powerTint(p.thermostatOn);
     if (!f.refreshText) return;
     this.temp.text = `${sim.thermostatT.toFixed(1)}°`;
     this.set.text = p.thermostatOn
@@ -67,8 +75,12 @@ export class ThermostatView implements View {
   }
 
   hitTest(p: Pt, pass: HitPass): Hit | null {
-    if (pass === "device" && inRect(p, this.ctx.lay.thermostat, 2))
-      return { kind: "thermostat", room: this.ctx.sim.thermostatRoom };
+    if (pass !== "device") return null;
+    const lay = this.ctx.lay;
+    const room = this.ctx.sim.thermostatRoom;
+    if (onPowerButton(p, lay.thermostatPower))
+      return { kind: "thermostat-power", room };
+    if (inRect(p, lay.thermostat, 2)) return { kind: "thermostat", room };
     return null;
   }
 }

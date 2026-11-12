@@ -9,7 +9,7 @@ import type { WallType } from "../../sim/model";
 import { daylight } from "../../sim/weather";
 import { mixColor, skyTint } from "../colors";
 import type { Frame, HitPass, SceneContext, View } from "../context";
-import { inRect, type Pt } from "../geometry";
+import type { Pt } from "../geometry";
 import type { Hit } from "../hit";
 
 const snowCtx = new GraphicsContext()
@@ -297,9 +297,6 @@ export class FabricView implements View {
       return { kind: "wall" };
     if (p.y < lay.ceilY && p.x < lay.wallX) return { kind: "loft" };
     if (p.x > this.wallEnd && p.y < lay.voidBottom) return { kind: "outside" };
-    if (p.y >= lay.floorY && p.y < lay.voidBottom && p.x < lay.wallX)
-      return { kind: "void" };
-    if (inRect(p, lay.cupboard)) return { kind: "cupboard" };
     return null;
   }
 }

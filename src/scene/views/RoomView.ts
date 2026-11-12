@@ -7,7 +7,6 @@ import { Graphics, GraphicsContext, type Text } from "pixi.js";
 import { TRV_SETTINGS } from "../../sim/model";
 import { roomTint, waterColor } from "../colors";
 import {
-  MUTED,
   type Frame,
   type HitPass,
   type SceneContext,
@@ -51,8 +50,6 @@ export class RoomView implements View {
   private cutHold = 0; // seconds the cut-away stays up after the pointer leaves the TRV
   private readonly layerBox = new Graphics();
   private readonly trvNumber: Text;
-  private readonly trvLabel: Text;
-  private readonly lsLabel: Text;
   /** Room temperature, where the thermostat doesn't already show it. */
   private readonly reading: Text | null = null;
 
@@ -155,19 +152,6 @@ export class RoomView implements View {
       ax: 0.5,
       ay: 0.5,
     });
-    this.trvLabel = ctx.label("TRV", rl.trvX, head.y - 4, {
-      size: 12,
-      weight: "700",
-      ax: 0.5,
-      ay: 1,
-    });
-    this.trvLabel.visible = false; // shown only while the TRV is hovered
-    this.lsLabel = ctx.label("Lockshield", rl.lockX + 16, rl.tailY - 38, {
-      size: 11,
-      color: MUTED,
-    });
-    this.lsLabel.visible = false; // appears only while the lockshield is hovered
-
     // Rooms without the thermostat show their temperature on the wall,
     // level with the thermostat's reading.
     if (index !== sim.thermostatRoom)
@@ -225,9 +209,6 @@ export class RoomView implements View {
     this.cutaway.alpha = this.cutLead.alpha = a < 0.01 ? 0 : a;
     this.cutaway.visible = this.cutLead.visible = a >= 0.01;
 
-    this.trvLabel.visible = onTrv;
-    this.lsLabel.visible = this.mine(h) && h?.kind === "lockshield";
-
     if (f.refreshText) {
       this.trvNumber.text =
         TRV_SETTINGS[sim.params.radiators[k].trvIndex].label;
@@ -251,16 +232,14 @@ export class RoomView implements View {
           R - 1,
           Math.max(0, Math.floor(((p.y - rl.rad.y) / rl.rad.h) * R)),
         );
-        return { kind: "cell", cell: this.firstLayer + layer, room };
+        return { kind: "radiator", cell: this.firstLayer + layer, room };
       }
-    } else if (pass === "space") {
-      if (inRect(p, rl.rect)) return { kind: "room", room };
     }
     return null;
   }
 
   setHover(hit: Hit | null): void {
-    const i = hit?.kind === "cell" ? (hit.cell ?? -1) : -1;
+    const i = hit?.kind === "radiator" ? (hit.cell ?? -1) : -1;
     const layer = i - this.firstLayer;
     const on = layer >= 0 && layer < this.layers.length;
     this.layerBox.visible = on;

@@ -20,6 +20,8 @@ export interface TipContent {
   swatch?: string; // CSS colour chip shown beside the value
   rows: TipRow[];
   note?: string;
+  /** What clicking does (shown even in brief tooltips). */
+  hint?: string;
 }
 
 const t1 = (t: number) => `${t.toFixed(1)} °C`;
@@ -76,7 +78,8 @@ export function describe(hit: Hit, sim: Sim): TipContent {
   const tag = (r: number) => (many ? ` · ${roomName(r)}` : "");
 
   switch (hit.kind) {
-    case "cell": {
+    case "cell":
+    case "radiator": {
       const i = hit.cell ?? circuit.hx;
       const T = sim.T[i];
       const info = sim.cellInfo(i);
@@ -215,7 +218,7 @@ export function describe(hit: Hit, sim: Sim): TipContent {
                 : `${Math.round(room.trvOpening * 100)}% open`,
           },
         ],
-        note: "It closes gradually as the air around it nears its target, so it controls only this radiator. Click (Shift+click) or scroll to turn it.",
+        note: "It closes gradually as the air around it nears its target, so it controls only this radiator. Scroll over it to turn it a notch.",
       };
     }
 
@@ -250,7 +253,7 @@ export function describe(hit: Hit, sim: Sim): TipContent {
           { label: "Purpose", value: "balancing" },
           flowRow(sim, circuit.radiators[k].lsTail.first),
         ],
-        note: "Set by the installer to share flow fairly between radiators. Closing it caps the flow through this radiator; the rest goes round the bypass. Click (Shift+click) or scroll to change it.",
+        note: "Set by the installer to share flow fairly between radiators. Closing it caps the flow through this radiator; the rest goes round the bypass. Scroll over it to change it in 10% steps.",
       };
 
     case "thermostat":
@@ -276,7 +279,25 @@ export function describe(hit: Hit, sim: Sim): TipContent {
             value: `${(p.thermostatSet - K.THERMOSTAT_HYST).toFixed(2)} / ${(p.thermostatSet + K.THERMOSTAT_HYST).toFixed(2)} °C`,
           },
         ],
-        note: "Turns the boiler and pump on and off for the whole system. Click to switch heating on or off; scroll to change the set temperature.",
+        note: "Turns the boiler and pump on and off for the whole system. Scroll over it to change the set temperature; its power button switches heating on or off.",
+      };
+
+    case "thermostat-power":
+      return {
+        title: "Thermostat power",
+        value: p.thermostatOn ? "On" : "Off",
+        rows: [
+          {
+            label: "Status",
+            value: !p.thermostatOn
+              ? "not calling"
+              : sim.demand
+                ? "calling for heat"
+                : "satisfied",
+          },
+          { label: "Boiler", value: p.boilerOn ? "on" : "switched off" },
+        ],
+        note: "When it's off, the thermostat never calls for heat, however cold the room gets.",
       };
 
     case "display":
@@ -309,7 +330,7 @@ export function describe(hit: Hit, sim: Sim): TipContent {
         note:
           hit.kind === "gas"
             ? undefined
-            : "A combi heats radiators and makes hot water on demand. Scroll or click (Shift+click) the boiler to change the flow temperature.",
+            : "A combi heats radiators and makes hot water on demand. Scroll over it to change the flow temperature.",
       };
     }
 
@@ -327,7 +348,7 @@ export function describe(hit: Hit, sim: Sim): TipContent {
                 : "satisfied",
           },
         ],
-        note: "Click to switch the boiler on or off. When it's off, the thermostat can call for heat but nothing happens.",
+        note: "When it's off, the thermostat can call for heat but nothing happens.",
       };
 
     case "pump":
@@ -423,61 +444,8 @@ export function describe(hit: Hit, sim: Sim): TipContent {
         value: t1(sim.outdoorT),
         rows,
         note: p.dayNight
-          ? "With the day/night cycle on, it's coldest around 3 am and warmest around 3 pm, so the house loses more heat at night. Click (Shift+click) or scroll here to change the daily average."
-          : "Heat loss is proportional to this difference. Click (Shift+click) or scroll here to change the outside temperature.",
-      };
-    }
-
-    case "void":
-      return {
-        title: "Floor void",
-        rows: [{ label: "Pipe heat loss now", value: watts(sim.pipeW) }],
-        note: "Flow and return pipes run under the floorboards. They're lagged, but still give off a little heat.",
-      };
-
-    case "cupboard":
-      return {
-        title: "Boiler cupboard",
-        rows: [],
-        note: "A combi boiler needs no hot-water cylinder or loft tanks. It heats tap water instantly when a tap opens.",
-      };
-
-    case "room": {
-      const exp = sim.expectedRoomTemp(k);
-      const rate = sim.roomRatePerHour(k);
-      const hasStat = k === sim.thermostatRoom;
-      return {
-        title: many ? `${roomName(k)} air` : "Room air",
-        value: t1(room.T),
-        rows: [
-          {
-            label: "Heat in (radiator + pipes)",
-            value: watts(room.radW + room.pipeW),
-          },
-          { label: "Heat out (fabric)", value: watts(room.lossW) },
-          ...(many
-            ? [
-                {
-                  label:
-                    room.partitionW >= 0
-                      ? "Lost to rooms next door"
-                      : "Gained from rooms next door",
-                  value: watts(Math.abs(room.partitionW)),
-                },
-              ]
-            : []),
-          {
-            label: "Trend",
-            value: `${rate >= 0 ? "+" : ""}${rate.toFixed(2)} °C/h`,
-          },
-          {
-            label: hasStat ? "Should settle near" : "Could reach (boiler on)",
-            value: t1(exp.t),
-          },
-        ],
-        note: hasStat
-          ? undefined
-          : `The thermostat is in ${roomName(sim.thermostatRoom)}. Once that room is warm enough the boiler stops, and this room stops warming too.`,
+          ? "With the day/night cycle on, it's coldest around 3 am and warmest around 3 pm, so the house loses more heat at night. Scroll here to change the daily average."
+          : "Heat loss is proportional to this difference. Scroll here to change the outside temperature.",
       };
     }
   }

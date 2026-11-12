@@ -10,7 +10,12 @@
  * tints (water colours), transforms (flow dots, flames, pump) and a few
  * throttled text labels.
  */
-import { Application, Container, type FederatedPointerEvent } from "pixi.js";
+import {
+  Application,
+  Container,
+  Graphics,
+  type FederatedPointerEvent,
+} from "pixi.js";
 import type { Sim } from "../sim/model";
 import {
   HIT_PASSES,
@@ -20,8 +25,8 @@ import {
   type Frame,
   type View,
 } from "./context";
-import type { Pt } from "./geometry";
-import { ADJUSTABLE, type Hit } from "./hit";
+import type { Pt, Rect } from "./geometry";
+import { CLICKABLE, SCROLLABLE, type Hit } from "./hit";
 import { computeLayout, type HouseLayout } from "./layout";
 import { BoilerView } from "./views/BoilerView";
 import { FabricView } from "./views/FabricView";
@@ -30,23 +35,29 @@ import { PipeNetworkView } from "./views/PipeNetworkView";
 import { RoomView } from "./views/RoomView";
 import { ThermostatView } from "./views/ThermostatView";
 
-export { ADJUSTABLE, type Hit, type HitKind } from "./hit";
+export { CLICKABLE, SCROLLABLE, type Hit, type HitKind } from "./hit";
 
 const TEXT_REFRESH_S = 0.2; // labels update at most this often
+const BACKGROUND = 0xf1ede5; // round the drawing when it doesn't fill the canvas
 
 export class HeatingScene {
   readonly app = new Application();
   hover: Hit | null = null;
   /** Heat-loss arrows (walls, roof, draughts) are hidden unless switched on. */
   showLosses = false;
+  /** The pointer moved: what it's over (null for nothing) and where. */
   onHover?: (hit: Hit | null, clientX: number, clientY: number) => void;
-  onAdjust?: (hit: Hit, dir: 1 | -1, source: "click" | "wheel") => void;
+  /** A click or tap, and what it hit (null for nothing clickable). */
+  onClick?: (hit: Hit | null) => void;
+  /** Scrolled over an object that can be turned up (1) or down (-1). */
+  onAdjust?: (hit: Hit, dir: 1 | -1) => void;
 
   private sim: Sim;
   /** Where everything sits, from the house plan. */
   private lay: HouseLayout;
-  private el!: HTMLElement;
   private readonly world = new Container();
+  /** Plain bands round the drawing, over anything drawn past its edges. */
+  private readonly letterbox = new Graphics();
   private ctx!: SceneContext;
   /** Views in drawing order; hit-testing asks them in this order too. */
   private views: View[] = [];
@@ -59,10 +70,9 @@ export class HeatingScene {
   }
 
   async init(el: HTMLElement): Promise<void> {
-    this.el = el;
     await this.app.init({
       resizeTo: el,
-      background: 0xf1ede5,
+      background: BACKGROUND,
       antialias: true,
       autoDensity: true,
       resolution: Math.min(window.devicePixelRatio || 1, 2),
@@ -76,7 +86,7 @@ export class HeatingScene {
     });
     el.appendChild(this.app.canvas);
     this.app.canvas.setAttribute("role", "img");
-    this.app.stage.addChild(this.world);
+    this.app.stage.addChild(this.world, this.letterbox);
     this.build();
 
     new ResizeObserver(() => this.app.queueResize()).observe(el);
@@ -98,6 +108,29 @@ export class HeatingScene {
     this.setHover(null, 0, 0);
   }
 
+  /** Where everything sits in the drawing (design space). */
+  get houseLayout(): HouseLayout {
+    return this.lay;
+  }
+
+  /** The drawing as it sits in the canvas, in page (document) coordinates. */
+  drawingOnPage(): Rect {
+    return this.toPage({ x: 0, y: 0, w: this.lay.W, h: this.lay.H });
+  }
+
+  /** A design-space rectangle in page (document) coordinates. */
+  toPage(r: Rect): Rect {
+    const b = this.app.canvas.getBoundingClientRect();
+    const c = { x: b.left + scrollX, y: b.top + scrollY };
+    const s = this.world.scale.x;
+    return {
+      x: c.x + this.world.x + r.x * s,
+      y: c.y + this.world.y + r.y * s,
+      w: r.w * s,
+      h: r.h * s,
+    };
+  }
+
   /** Create the drawing layers and every view, back to front. */
   private build(): void {
     const layers = makeLayers();
@@ -112,9 +145,6 @@ export class HeatingScene {
       new ThermostatView(ctx),
       new LossArrowsView(ctx, fabric),
     ];
-    // The canvas takes the drawing's shape, so wider houses get a shorter
-    // canvas rather than empty bands above and below.
-    this.el.style.aspectRatio = `${this.lay.W} / ${this.lay.H}`;
     const n = this.lay.rooms.length;
     this.app.canvas.setAttribute(
       "aria-label",
@@ -126,11 +156,28 @@ export class HeatingScene {
   // Layout & input
   // ---------------------------------------------------------------------------
 
+  /**
+   * Fit the drawing to the canvas (which fills the window under the top
+   * bar), centred. On a portrait screen it sits at the top, leaving the room
+   * below it for the bubbles.
+   */
   private layout(w: number, h: number): void {
     const lay = this.lay;
     const s = Math.min(w / lay.W, h / lay.H);
     this.world.scale.set(s);
-    this.world.position.set((w - lay.W * s) / 2, (h - lay.H * s) / 2);
+    const spareY = h - lay.H * s;
+    const x0 = (w - lay.W * s) / 2;
+    const y0 = h > w ? 0 : spareY / 2;
+    this.world.position.set(x0, y0);
+    const dw = lay.W * s;
+    const dh = lay.H * s;
+    this.letterbox
+      .clear()
+      .rect(0, 0, w, y0)
+      .rect(0, y0 + dh, w, h - y0 - dh)
+      .rect(0, y0, x0, dh)
+      .rect(x0 + dw, y0, w - x0 - dw, dh)
+      .fill(BACKGROUND);
     // Keep text crisp when the scene is scaled up.
     // Quantised so small size changes don't re-rasterise every label.
     this.ctx.setTextResolution(
@@ -146,14 +193,21 @@ export class HeatingScene {
     stage.interactiveChildren = false;
 
     stage.on("pointermove", (e: FederatedPointerEvent) => {
+      // Pixi hears pointer moves over the whole page. Only those over the
+      // canvas itself count: not over a pinned bubble lying on top of it.
+      if (e.nativeEvent.target !== this.app.canvas) {
+        if (this.hover) this.setHover(null, 0, 0);
+        stage.cursor = "default";
+        return;
+      }
       const hit = this.hitTest(this.world.toLocal(e.global));
-      stage.cursor = hit && ADJUSTABLE.has(hit.kind) ? "pointer" : "default";
+      stage.cursor = hit && CLICKABLE.has(hit.kind) ? "pointer" : "default";
       this.setHover(hit, e.client.x, e.client.y);
     });
+    // Every tap is reported, on nothing too (that closes an open bubble).
     stage.on("pointertap", (e: FederatedPointerEvent) => {
       const hit = this.hitTest(this.world.toLocal(e.global));
-      if (hit && ADJUSTABLE.has(hit.kind))
-        this.onAdjust?.(hit, e.shiftKey ? -1 : 1, "click");
+      this.onClick?.(hit && CLICKABLE.has(hit.kind) ? hit : null);
     });
     this.app.canvas.addEventListener("pointerleave", () =>
       this.setHover(null, 0, 0),
@@ -167,9 +221,9 @@ export class HeatingScene {
         const hit = this.hitTest(
           this.world.toLocal({ x: e.clientX - r.left, y: e.clientY - r.top }),
         );
-        if (hit && ADJUSTABLE.has(hit.kind)) {
+        if (hit && SCROLLABLE.has(hit.kind)) {
           e.preventDefault();
-          this.onAdjust?.(hit, e.deltaY < 0 ? 1 : -1, "wheel");
+          this.onAdjust?.(hit, e.deltaY < 0 ? 1 : -1);
         }
       },
       { passive: false },

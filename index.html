@@ -29,79 +29,44 @@
         <span id="clock" class="clock" hidden aria-live="off">06:00</span><!-- shown while the day/night cycle is on -->
         <div class="seg" id="speed" role="radiogroup" aria-label="Simulation speed"></div>
         <button id="btn-reset" class="btn" type="button" title="Restart from cold: rooms, water and pipes all at the outside temperature">Reset</button>
+        <div class="view-toggles" aria-label="View options">
+          <button id="i-losses" class="btn toggle" type="button" aria-pressed="false" title="Show where heat escapes: walls, roof and draughts">Heat loss</button>
+          <button id="i-details" class="btn toggle" type="button" aria-pressed="false" title="Show more detail in the tooltips">Details</button>
+        </div>
       </div>
     </header>
 
-    <main class="page">
-      <div class="card scene-card">
-        <div id="scene" class="scene"></div>
+    <!-- The drawing fills the rest of the window, like a game screen. -->
+    <main class="stage">
+      <div id="scene" class="scene"></div>
+      <p class="scene-hint">Click the boiler, thermostat, TRVs, lockshields, walls or outside to change them.</p>
 
-        <div class="status-row">
-          <span class="water-legend" aria-label="Water colour scale from 10 to 80 degrees">
-            <span>10°</span><span id="water-scale" class="water-scale"></span><span>80°</span>
-          </span>
-        </div>
-
-        <details class="controls-group" id="controls-group">
-          <summary>Controls</summary>
-          <div class="controls">
-            <div class="ctl ctl-power">
-              <span class="ctl-label" id="power-label">Boiler <output id="o-power">On</output></span>
-              <button id="i-power" class="switch" type="button" role="switch" aria-checked="true" aria-labelledby="power-label">
-                <span class="knob"></span>
-              </button>
-            </div>
-            <div class="ctl ctl-flow">
-              <label class="ctl-label" for="i-flow">Flow temp <output id="o-flow">65 °C</output></label>
-              <input id="i-flow" type="range" min="30" max="80" step="1" value="65" />
-            </div>
-            <div class="ctl ctl-stat">
-              <label class="ctl-label" for="i-stat">Thermostat <output id="o-stat">20.0 °C</output></label>
-              <input id="i-stat" type="range" min="5" max="30" step="0.5" value="20" />
-            </div>
-            <div class="ctl ctl-ins">
-              <span class="ctl-label" id="ins-label">Insulation</span>
-              <div class="seg" id="insulation" role="radiogroup" aria-labelledby="ins-label"></div>
-            </div>
-            <div class="ctl ctl-out">
-              <label class="ctl-label" for="i-out">Outside <output id="o-out">5 °C</output></label>
-              <input id="i-out" type="range" min="-15" max="25" step="1" value="5" />
-              <label class="view-toggle" title="The outside temperature swings ±4 °C around the slider's value: coldest around 3 am, warmest around 3 pm"><input id="i-daynight" type="checkbox" /> Day/night cycle</label>
-            </div>
-          </div>
-          <!-- One row per radiator, from the template below. -->
-          <div class="radiators" id="radiators"></div>
-          <template id="radiator-row">
-            <div class="rad-row">
-              <span class="rad-name"></span>
-              <div class="ctl ctl-trv">
-                <span class="ctl-label"><span class="trv-label">TRV</span> <output class="o-trv"></output></span>
-                <div class="seg trv" role="radiogroup"></div>
-              </div>
-              <div class="ctl ctl-ls">
-                <label class="ctl-label">Lockshield <output class="o-ls">100%</output></label>
-                <input class="i-ls" type="range" min="10" max="100" step="10" value="100" />
-              </div>
-            </div>
-          </template>
-          <div class="view-options">
-            <label class="view-toggle"><input id="i-losses" type="checkbox" /> Show heat loss</label>
-            <label class="view-toggle"><input id="i-details" type="checkbox" /> Detailed tooltips</label>
-          </div>
-        </details>
-      </div>
-
-      <!-- History chart and table: hidden for now. -->
-      <details class="card history" id="history" hidden>
-        <summary>History (last 6 hours)</summary>
-        <ul class="chart-legend" id="chart-legend"></ul>
-        <div id="chart" class="chart"></div>
-        <details id="table-details" class="table-details">
-          <summary>Show as table</summary>
-          <div class="table-wrap"><table id="data-table"></table></div>
-        </details>
-      </details>
     </main>
+
+    <!-- History chart and table: hidden for now. -->
+    <details class="card history" id="history" hidden>
+      <summary>History (last 6 hours)</summary>
+      <ul class="chart-legend" id="chart-legend"></ul>
+      <div id="chart" class="chart"></div>
+      <details id="table-details" class="table-details">
+        <summary>Show as table</summary>
+        <div class="table-wrap"><table id="data-table"></table></div>
+      </details>
+    </details>
+
+    <!-- The bubble beside an object in the scene: its details on hover, plus
+         its controls once clicked. Filled in by deviceCard.ts. -->
+    <div id="device-card" class="device-card" role="tooltip" aria-labelledby="card-title" tabindex="-1" hidden>
+      <div class="card-head">
+        <h2 id="card-title" class="card-title"></h2>
+        <button class="card-close" type="button" aria-label="Close">
+          <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+      <div class="card-info"></div>
+      <div class="card-body" hidden></div>
+      <span class="card-arrow" aria-hidden="true"></span>
+    </div>
 
     <div id="tooltip" class="tooltip" role="tooltip" hidden></div>
     <script type="module" src="/src/main.ts"></script>

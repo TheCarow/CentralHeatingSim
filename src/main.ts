@@ -2,11 +2,15 @@ import "@fontsource-variable/nunito"; // friendly rounded type, bundled with the
 import { makePlan } from "./house/plan";
 import { Sim } from "./sim/model";
 import { HeatingScene } from "./scene/HeatingScene";
-import type { Hit } from "./scene/hit";
+import type { Rect } from "./scene/geometry";
+import { CLICKABLE, type Hit } from "./scene/hit";
 import { HistoryChart } from "./chart/HistoryChart";
 import { Tooltip } from "./ui/tooltip";
-import { describe } from "./ui/describe";
+import { describe, type TipContent } from "./ui/describe";
 import { Controls } from "./ui/controls";
+import { DeviceCard } from "./ui/deviceCard";
+import { nudge, togglePower } from "./ui/settings";
+import { anchorFor, bubbleFor, targetFor, type CardTarget } from "./ui/targets";
 import { playbackIcon } from "./ui/playbackIcon";
 import { formatTimeOfDay } from "./sim/weather";
 
@@ -44,12 +48,17 @@ const DEFAULT_SPEED = 20;
 
   const controls = new Controls(sim);
   controls.build();
+  // The card of controls for whatever was clicked in the scene.
+  const card = new DeviceCard(
+    document.getElementById("device-card")!,
+    () => sim,
+  );
 
   // Dev-only handle for poking at the simulation from the console.
   const devHandle = () => {
     if (import.meta.env.DEV)
       Object.assign(window, {
-        __heating: { sim, scene, chart, controls, tooltip },
+        __heating: { sim, scene, chart, controls, card, tooltip },
       });
   };
   devHandle();
@@ -73,6 +82,7 @@ const DEFAULT_SPEED = 20;
       if (k < rooms) p.radiators[k] = { ...r };
     });
     next.coldStart();
+    card.close(); // its object may be gone
     sim = next;
     scene.setSim(sim);
     chart.setSim(sim);
@@ -144,51 +154,154 @@ const DEFAULT_SPEED = 20;
   });
   syncSpeed();
 
-  // ---- hover & direct manipulation in the scene ----
+  // ---- hover, clicks and scrolling in the scene ----
+  // Objects you can change (boiler, thermostat, valves, outside, walls and
+  // loft) show their details in a bubble fixed beside them; clicking pins
+  // the bubble and adds their controls. Everything else (water, pipes,
+  // rooms) gets a tooltip that follows the pointer.
   let hover: Hit | null = null;
-  let pointer = { x: 0, y: 0 };
-  // Tooltip detail: off by default -> just the title and headline value.
-  const detailToggle = document.getElementById("i-details") as HTMLInputElement;
+  let pointer = { x: 0, y: 0 }; // client
+  // Detail: off by default -> just the title and headline value.
+  const detailToggle = document.getElementById("i-details")!;
   let detailed = false;
-  detailToggle.checked = detailed;
-  const tipFor = (hit: Hit) => {
+  const tipFor = (hit: Hit, hint?: string): TipContent => {
     const c = describe(hit, sim);
     return detailed
-      ? c
-      : { title: c.title, value: c.value, swatch: c.swatch, rows: [] };
+      ? { ...c, hint }
+      : { title: c.title, value: c.value, swatch: c.swatch, rows: [], hint };
+  };
+  const hintFor = (hit: Hit) =>
+    hit.kind === "power" || hit.kind === "thermostat-power"
+      ? "Click to switch on or off"
+      : targetFor(hit)?.kind === "insulation"
+        ? "Click to change the insulation"
+        : CLICKABLE.has(hit.kind)
+          ? "Click to change"
+          : undefined;
+  /** Bring the bubble's details and the pointer tooltip up to date. */
+  const refreshTips = () => {
+    const about = card.subject;
+    if (about)
+      card.setInfo(tipFor(about, card.pinned ? undefined : hintFor(about)));
+    if (hover && !bubbleFor(hover))
+      tooltip.show(tipFor(hover), pointer.x, pointer.y);
+    else tooltip.hide();
+  };
+
+  // Where the bubble points: always the same spot for the same thing.
+  let bubbleAnchor: Rect = { x: 0, y: 0, w: 0, h: 0 };
+  const anchorOf = (t: CardTarget, part: Hit) =>
+    anchorFor(t, scene.houseLayout, part.kind);
+  const anchorOnPage = () => scene.toPage(bubbleAnchor);
+  const drawingOnPage = () => scene.drawingOnPage();
+
+  // Hovering an object peeks at it (unless a bubble is pinned open).
+  let peekKey = "";
+  const showHover = () => {
+    const t = bubbleFor(hover);
+    if (!card.pinned) {
+      if (!t || !hover) card.close();
+      else {
+        // Pointing at the same spot as now: the bubble stays put.
+        const anchor = anchorOf(t, hover);
+        const key = `${t.kind}:${JSON.stringify(anchor)}`;
+        if (card.isOpen(t) && key === peekKey) card.setSubject(hover);
+        else {
+          peekKey = key;
+          bubbleAnchor = anchor;
+          card.peek(t, hover, anchorOnPage, drawingOnPage);
+        }
+      }
+    }
+    refreshTips();
   };
   let hoverKey = "";
   scene.onHover = (hit, x, y) => {
     hover = hit;
     pointer = { x, y };
-    if (!hit) {
-      hoverKey = "";
-      tooltip.hide();
-      return;
-    }
-    const key = `${hit.kind}:${hit.cell ?? ""}:${hit.room ?? ""}`;
+    const key = hit ? `${hit.kind}:${hit.cell ?? ""}:${hit.room ?? ""}` : "";
     if (key === hoverKey) {
-      tooltip.move(x, y); // same element: no rebuild, just follow the pointer
+      // Same thing: the bubble stays put; the pointer tooltip follows.
+      if (hit && !bubbleFor(hit)) tooltip.move(x, y);
       return;
     }
     hoverKey = key;
-    tooltip.show(tipFor(hit), x, y);
-  };
-  scene.onAdjust = (hit, dir, source) => {
-    controls.adjust(hit, dir, source);
-    if (hover) tooltip.show(tipFor(hover), pointer.x, pointer.y);
+    showHover();
   };
 
-  detailToggle.addEventListener("change", () => {
-    detailed = detailToggle.checked;
-    if (hover) tooltip.show(tipFor(hover), pointer.x, pointer.y);
+  // Click an object to pin its bubble open with the controls; click it (or
+  // anywhere else) again to close. The power buttons switch straight away.
+  scene.onClick = (hit) => {
+    if (hit && togglePower(sim.params, hit)) {
+      card.sync();
+      refreshTips();
+      return;
+    }
+    const t = targetFor(hit);
+    // Nothing to open: close a pinned bubble (a peek stays with the pointer).
+    if (!t || !hit) {
+      if (card.pinned) card.close();
+      return;
+    }
+    if (card.pinned && card.isOpen(t)) {
+      card.close();
+      return;
+    }
+    // Pinned where it was peeking; otherwise beside the clicked object.
+    if (!card.isOpen(t)) bubbleAnchor = anchorOf(t, hit);
+    card.pin(t, hit, anchorOnPage, drawingOnPage);
+    refreshTips();
+  };
+  card.onClose = (wasPinned) => {
+    peekKey = "";
+    // Back to peeking at whatever the pointer is over.
+    if (wasPinned) showHover();
+  };
+  card.onChange = refreshTips;
+  scene.onAdjust = (hit, dir) => {
+    nudge(sim.params, hit, dir);
+    card.sync();
+    refreshTips();
+  };
+
+  // Close a pinned bubble with Escape, or by clicking away from it (the top
+  // bar doesn't count, so the speed can change while it's open).
+  const topbar = document.querySelector(".topbar")!;
+  document.addEventListener("pointerdown", (e) => {
+    const t = e.target as Node;
+    if (
+      card.pinned &&
+      !card.contains(t) &&
+      t !== scene.app.canvas &&
+      !topbar.contains(t)
+    )
+      card.close();
   });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && card.pinned) card.close();
+  });
+  window.addEventListener("resize", () => card.place());
 
+  // View options in the top bar: pressed / not pressed.
+  const toggle = (
+    btn: HTMLElement,
+    on: boolean,
+    apply: (on: boolean) => void,
+  ) => {
+    btn.setAttribute("aria-pressed", String(on));
+    btn.addEventListener("click", () => {
+      on = !on;
+      btn.setAttribute("aria-pressed", String(on));
+      apply(on);
+    });
+  };
+  toggle(detailToggle, detailed, (on) => {
+    detailed = on;
+    refreshTips();
+  });
   // Heat-loss arrows: off by default.
-  const lossToggle = document.getElementById("i-losses") as HTMLInputElement;
-  lossToggle.checked = scene.showLosses;
-  lossToggle.addEventListener("change", () => {
-    scene.showLosses = lossToggle.checked;
+  toggle(document.getElementById("i-losses")!, scene.showLosses, (on) => {
+    scene.showLosses = on;
   });
 
   // ---- main loop (driven by the scene's ticker) ----
@@ -215,6 +328,9 @@ const DEFAULT_SPEED = 20;
       // At real time the minutes barely move, so show the seconds ticking.
       if (!clock.hidden)
         clock.textContent = formatTimeOfDay(sim.time, speed === 1);
+      // Follow the drawing if the page around it moves (e.g. the clock
+      // appearing re-wraps the top bar).
+      card.place();
     }
     if (chartTimer >= 0.5) {
       chartTimer = 0;
@@ -223,9 +339,9 @@ const DEFAULT_SPEED = 20;
         controls.updateTable();
       }
     }
-    if (hover && tipTimer >= 0.15) {
+    if ((hover || card.subject) && tipTimer >= 0.15) {
       tipTimer = 0;
-      tooltip.show(tipFor(hover), pointer.x, pointer.y);
+      refreshTips();
     }
   });
 })();

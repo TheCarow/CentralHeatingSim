@@ -1,6 +1,6 @@
 /*
- * Colour helpers. Interpolation happens in OKLab so the blue -> red water
- * scale stays even in perceived lightness instead of going muddy mid-way.
+ * Colour helpers. Interpolation happens in OKLab, so blends between colours
+ * change evenly as the eye sees them instead of going muddy mid-way.
  */
 
 type Lab = [number, number, number];
@@ -68,13 +68,24 @@ function makeRamp(stops: ReadonlyArray<readonly [number, number]>) {
   };
 }
 
-// ---- Water temperature: blue (cold) -> red (hot) ---------------------------
+// ---- Water temperature: blue (cold) -> orange (hot) -------------------------
+// Like a thermal camera: blue, violet, magenta, coral red, orange. Lightness
+// rises steadily with temperature (OKLab L 0.45 -> 0.80), because the eye
+// sees small lightness differences on thin pipes far better than hue alone.
+// Most of the change is spent on 35-75 °C, where flow, return and radiator
+// temperatures actually differ: about ΔE 6 (OKLab x100) per 5 °C there,
+// and about 2 per 5 °C at the cold end.
 export const WATER_MIN = 10;
 export const WATER_MAX = 80;
 const WATER_STOPS = [
-  [WATER_MIN, 0x2b63d9],
-  [45, 0x9a49b8],
-  [WATER_MAX, 0xe0302a],
+  [WATER_MIN, 0x0553a6], // deep blue
+  [25, 0x3856c8], // blue
+  [35, 0x7350da], // blue-violet
+  [45, 0xb444c5], // purple
+  [55, 0xe93a8f], // magenta
+  [65, 0xfd5a57], // coral red
+  [75, 0xff8d44], // orange
+  [WATER_MAX, 0xffa54b], // light orange
 ] as const;
 const waterRamp = makeRamp(WATER_STOPS);
 
@@ -87,17 +98,6 @@ for (let i = 0; i < LUT.length; i++)
 export function waterColor(t: number): number {
   const i = Math.round((t - WATER_MIN) / LUT_STEP);
   return LUT[i < 0 ? 0 : i >= LUT.length ? LUT.length - 1 : i];
-}
-
-/** CSS gradient matching the water scale, for the legend bar. */
-export function waterGradientCss(): string {
-  const parts: string[] = [];
-  for (let t = WATER_MIN; t <= WATER_MAX; t += 5) {
-    parts.push(
-      `${toCss(waterColor(t))} ${(((t - WATER_MIN) / (WATER_MAX - WATER_MIN)) * 100).toFixed(1)}%`,
-    );
-  }
-  return `linear-gradient(90deg, ${parts.join(", ")})`;
 }
 
 // ---- Room air & sky tints -----------------------------------------------------

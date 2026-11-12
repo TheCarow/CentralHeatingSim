@@ -95,6 +95,8 @@ export interface HouseLayout {
   returnY: number; // return pipe under the floor
   rooms: RoomLayout[];
   thermostat: Rect;
+  /** The thermostat's on/off button, bottom right. */
+  thermostatPower: Circle;
   /** Centre of the thermostat's big reading (the outside reading lines up). */
   thermoReadY: number;
   losses: LossArrowLayout;
@@ -318,6 +320,11 @@ export function computeLayout(plan: HousePlan): HouseLayout {
     returnY: RETURN_Y,
     rooms,
     thermostat,
+    thermostatPower: {
+      x: thermostat.x + thermostat.w - 15,
+      y: thermostat.y + thermostat.h - 11,
+      r: 8,
+    },
     thermoReadY: thermostat.y + READ_DY,
     losses: {
       wallX1: wallX - 40,

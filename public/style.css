@@ -17,7 +17,7 @@
   --text-secondary: #4a6280; /* 6.3:1 */
   --text-muted: #5c718a; /* 5.0:1 */
   --brand: #1573c2; /* slider progress, solid blue: white text 4.9:1 */
-  /* gentle two-tone fill for selected options and the Controls bar:
+  /* gentle two-tone fill for selected options and pressed toggles:
      white text 4.4:1 at the top, 5.1:1 in the middle */
   --brand-fill: linear-gradient(#1a7bcb, #1265b0);
   --brand-ink: #0d5ea3; /* blue text: 6.7:1 on white */
@@ -56,22 +56,23 @@
   box-sizing: border-box;
 }
 
-html {
-  /* Reserve the scrollbar so its appearing never resizes the canvas. */
-  scrollbar-gutter: stable;
-}
-
 html,
 body {
   margin: 0;
   color: var(--text-primary);
 }
 
+/* One screen, like a game: the top bar, then the drawing filling the rest.
+   The page itself never scrolls. */
 body {
-  min-height: 100vh;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
   font-size: 14px;
   line-height: 1.45;
-  background: linear-gradient(var(--page-top), var(--page-bottom)) fixed;
+  background: linear-gradient(var(--page-top), var(--page-bottom));
 }
 
 /* ---------- top bar ---------- */
@@ -81,9 +82,8 @@ body {
   gap: 10px 20px;
   align-items: center;
   justify-content: space-between;
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 16px 16px 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
 }
 
 h1 {
@@ -172,7 +172,7 @@ h1 {
 /* small-caps labels, like section titles in a game menu */
 .rooms-label,
 .ctl-label,
-.rad-name {
+.card-title {
   font-variant-caps: all-small-caps;
   letter-spacing: 0.04em;
 }
@@ -235,6 +235,23 @@ h1 {
 }
 
 /* speed selector: pause and one to four arrows, drawn as SVG */
+/* view options: pills that light up blue while on */
+.view-toggles {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.btn.toggle {
+  padding: 0 14px;
+}
+
+.btn.toggle[aria-pressed="true"] {
+  border-color: transparent;
+  background: var(--brand-fill);
+  color: var(--on-accent);
+  box-shadow: 0 1px 3px rgba(18, 101, 176, 0.35);
+}
+
 #speed button {
   display: inline-flex;
   align-items: center;
@@ -247,6 +264,7 @@ h1 {
 }
 
 .btn:focus-visible,
+.card-close:focus-visible,
 .seg button:focus-visible,
 input[type="range"]:focus-visible,
 summary:focus-visible {
@@ -254,14 +272,18 @@ summary:focus-visible {
   outline-offset: 2px;
 }
 
-/* ---------- page ---------- */
-.page {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 16px 32px;
+/* ---------- the drawing ---------- */
+.stage {
+  position: relative;
+  min-height: 0;
+}
+
+/* Fills the stage; script scales the drawing to fit inside it. */
+.scene {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: #f1ede5;
 }
 
 .card {
@@ -271,38 +293,12 @@ summary:focus-visible {
   box-shadow: var(--shadow-card);
 }
 
-/* The diagram sits in a white frame with rounded corners. */
-.scene-card {
-  overflow: hidden;
-  padding: 8px;
-}
-
-.scene {
-  width: 100%;
-  aspect-ratio: 12 / 7; /* replaced by the drawing's own shape from script */
-  /* Let the box shrink to its aspect ratio even while the canvas inside is
-     still at its old size (an aspect-ratio box never shrinks below its content). */
-  overflow: hidden;
-  min-height: 0;
-  border-radius: 14px;
-  background: #f1ede5;
-}
-
 .scene canvas,
 .chart canvas {
   display: block;
 }
 
-/* ---------- control strip ---------- */
-/* Whole-house settings in one strip, then one row per radiator. */
-.controls {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.6fr) minmax(0, 1fr);
-  grid-template-areas: "power flow stat ins out";
-  gap: 14px 22px;
-  padding: 16px 12px 12px;
-}
-
+/* ---------- controls (inside the cards) ---------- */
 .ctl {
   display: flex;
   flex-direction: column;
@@ -314,58 +310,12 @@ summary:focus-visible {
   display: flex;
 }
 
-.ctl-power { grid-area: power; }
-.ctl-flow { grid-area: flow; }
-.ctl-stat { grid-area: stat; }
-.ctl-ins { grid-area: ins; }
-.ctl-out { grid-area: out; }
-
-/* each radiator's row sits on its own soft panel */
-.radiators {
-  display: grid;
-  gap: 10px;
-  padding: 4px 12px 12px;
-}
-
-.rad-row {
-  display: grid;
-  grid-template-columns: 76px minmax(0, 1.6fr) minmax(0, 1fr);
-  align-items: end;
-  gap: 12px 22px;
-  padding: 10px 14px 12px;
-  border-radius: 16px;
-  background: var(--surface-3);
-  box-shadow: inset 0 0 0 1px var(--border);
-}
-
-.rad-name {
-  padding-bottom: 6px;
-  font-size: 16px;
-  font-weight: 900;
-  color: var(--text-primary);
-}
-
-/* Medium widths: power and sliders on one row; insulation below. */
-@media (max-width: 1180px) {
-  .controls {
-    grid-template-columns: auto repeat(3, minmax(0, 1fr));
-    grid-template-areas:
-      "power flow stat out"
-      "ins ins ins ins";
-  }
+/* a switched-off control's slider still works, but recedes */
+.ctl.is-off input[type="range"] {
+  opacity: 0.55;
 }
 
 @media (max-width: 560px) {
-  .controls {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-areas: "power" "flow" "stat" "ins" "out";
-  }
-  .rad-row {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .rad-name {
-    padding-bottom: 0;
-  }
   h1 {
     font-size: 20px;
   }
@@ -485,105 +435,192 @@ input[type="range"]::-moz-range-thumb {
   outline-offset: 2px;
 }
 
-/* ---------- collapsible controls group ---------- */
-/* A bright blue title bar, opening the panel below. */
-.controls-group > summary {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  margin: 8px 0 0;
-  padding: 8px 16px;
-  border-radius: 14px;
-  background: var(--brand-fill);
-  box-shadow: 0 2px 6px rgba(18, 101, 176, 0.25);
-  color: #ffffff;
-  font-size: 19px;
-  font-weight: 900;
-  font-variant-caps: all-small-caps;
-  letter-spacing: 0.06em;
-  cursor: pointer;
-  list-style: none;
-  user-select: none;
+/* ---------- bubble beside an object ---------- */
+/* A white speech bubble pointing at the object: its details while hovered
+   ("peek"), with its controls under them once clicked. Script places it (in
+   page coordinates) and sets data-side (where it sits) and --arrow (where
+   its pointer meets the edge). */
+.device-card {
+  --arrow: 50%;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 40;
+  width: 288px;
+  max-width: calc(100vw - 16px);
+  padding: 10px 14px 14px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+  opacity: 0;
+  transition: opacity 0.12s ease;
 }
 
-.controls-group > summary::-webkit-details-marker {
+.device-card[hidden] {
   display: none;
 }
 
-.controls-group > summary::before {
-  content: "";
-  width: 7px;
-  height: 7px;
-  border-right: 3px solid currentColor;
-  border-bottom: 3px solid currentColor;
-  border-radius: 1px;
-  transform: rotate(-45deg);
-  transition: transform 0.15s ease;
+/* fading out: already out of the pointer's way */
+.device-card:not(.is-shown) {
+  pointer-events: none;
 }
 
-.controls-group[open] > summary::before {
+/* peeking: just the details; the pointer passes through to the drawing */
+.device-card.is-peek {
+  pointer-events: none;
+}
+
+.device-card.is-peek .card-close {
+  display: none;
+}
+
+/* focused only so that Tab starts inside it */
+.device-card:focus {
+  outline: none;
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 28px;
+}
+
+.card-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 900;
+  line-height: 1.2;
+  color: var(--brand-ink);
+}
+
+.card-close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-right: -6px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.card-close:hover {
+  background: var(--tray);
+  color: var(--brand-ink);
+}
+
+/* the controls, under the details once the bubble is pinned */
+.card-body {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.card-body[hidden] {
+  display: none;
+}
+
+/* options take the room their labels need ("Excellent" is long) */
+.card-body .seg button {
+  flex: 1 1 auto;
+  padding: 0 6px;
+}
+
+/* a label with an on/off switch at the end of the line */
+.ctl.ctl-switch {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+
+.ctl-switch .ctl-label {
+  flex: 1 1 auto;
+}
+
+.ctl-switch output {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.ctl-switch .switch {
+  flex: none;
+}
+
+.card-note {
+  margin: -4px 0 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.card-note[hidden] {
+  display: none;
+}
+
+/* the bubble's pointer: a turned square on the edge facing the object */
+.card-arrow {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  background: var(--surface-1);
+  border: 0 solid var(--border);
   transform: rotate(45deg);
 }
 
-.controls-group > summary:hover {
-  filter: brightness(1.06);
+.device-card[data-side="above"] .card-arrow {
+  bottom: -8px;
+  left: calc(var(--arrow) - 7px);
+  border-right-width: 1px;
+  border-bottom-width: 1px;
 }
 
-.view-options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 24px;
-  padding: 0 14px 6px;
+.device-card[data-side="below"] .card-arrow {
+  top: -8px;
+  left: calc(var(--arrow) - 7px);
+  border-left-width: 1px;
+  border-top-width: 1px;
 }
 
-/* ---------- legend row under the canvas ---------- */
-.status-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px 20px;
-  padding: 8px 6px 0;
+.device-card[data-side="right"] .card-arrow {
+  left: -8px;
+  top: calc(var(--arrow) - 7px);
+  border-left-width: 1px;
+  border-bottom-width: 1px;
 }
 
-.view-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
+.device-card[data-side="left"] .card-arrow {
+  right: -8px;
+  top: calc(var(--arrow) - 7px);
+  border-right-width: 1px;
+  border-top-width: 1px;
+}
+
+/* ---------- hint over the drawing ---------- */
+/* A small label in the bottom-left corner; clicks go through it. */
+.scene-hint {
+  position: absolute;
+  left: 12px;
+  bottom: 10px;
+  max-width: calc(100% - 24px);
+  margin: 0;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 1px 3px rgba(29, 53, 80, 0.12);
   font-size: 13px;
   font-weight: 700;
   color: var(--text-secondary);
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.view-toggle input {
-  width: 16px;
-  height: 16px;
-  margin: 0;
-  accent-color: var(--brand);
-}
-
-.water-legend {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  background: var(--surface-2);
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.water-scale {
-  display: block;
-  width: 120px;
-  height: 10px;
-  border-radius: 999px;
-  box-shadow: inset 0 0 0 1px rgba(29, 53, 80, 0.12);
+  pointer-events: none;
 }
 
 /* ---------- history ---------- */
@@ -691,6 +728,8 @@ input[type="range"]::-moz-range-thumb {
   top: 0;
   left: 0;
   z-index: 50;
+  opacity: 0;
+  transition: opacity 0.12s ease;
   max-width: 300px;
   padding: 12px 14px;
   background: var(--tip-bg);
@@ -704,6 +743,15 @@ input[type="range"]::-moz-range-thumb {
 .tooltip[hidden] {
   display: none;
 }
+
+/* The tooltip and the bubble fade quickly in and out (script toggles
+   is-shown, then hides them once faded). Opacity only, nothing moves, so
+   this stays on even when reduced motion is asked for. */
+.tooltip.is-shown,
+.device-card.is-shown {
+  opacity: 1;
+}
+
 
 .tip-title {
   font-size: 15px;
@@ -773,4 +821,11 @@ input[type="range"]::-moz-range-thumb {
   margin: 8px 0 0;
   color: var(--text-muted);
   line-height: 1.4;
+}
+
+.tip-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--brand-ink);
 }

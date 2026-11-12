@@ -33,7 +33,7 @@ recorded values (`tests/golden/sim-baseline.json`). Re-record it with
 | TRV head setting (0, ❄, 1–5), per radiator | buttons in that radiator's row, or click/scroll the TRV |
 | Insulation (Poor → Excellent) | buttons |
 | Outside temperature (−15–25 °C) | slider, or click/scroll the outside area |
-| Day/night cycle (optional) | checkbox under Outside: the outside temperature swings ±4 °C around the slider's value, coldest around 3 am and warmest around 3 pm; the sky darkens at night and a clock shows the day and time |
+| Day/night cycle (optional) | checkbox under Outside: the outside temperature swings ±4 °C around the slider's value, coldest around 3 am and warmest around 3 pm; the sky darkens at night and a clock shows the time of day |
 
 Shift+click turns a device down. Hover anything in the diagram for live
 details. Pipe colour runs blue (10 °C) to red (80 °C).

@@ -211,8 +211,7 @@ const DEFAULT_SPEED = 20;
       uiTimer = 0;
       // The clock only matters while the outside follows the time of day.
       clock.hidden = !sim.params.dayNight;
-      if (!clock.hidden)
-        clock.textContent = `Day ${Math.floor(sim.time / 86400) + 1} · ${clockLabel(sim.time % 86400)}`;
+      if (!clock.hidden) clock.textContent = clockLabel(sim.time % 86400); // time of day only
     }
     if (chartTimer >= 0.5) {
       chartTimer = 0;

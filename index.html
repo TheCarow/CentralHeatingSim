@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Interactive simulation of a combi boiler heating one room: flow temperature, TRV, thermostat, insulation and outside temperature."
+    />
+    <link rel="stylesheet" href="/style.css" />
+    <title>Combi Heating Simulator</title>
+  </head>
+
+  <body>
+    <header class="topbar">
+      <h1>Combi Heating Simulator</h1>
+      <div class="simbar" aria-label="Simulation controls">
+        <span id="clock" class="clock" hidden>Day 1 · 06:00</span><!-- hidden for now -->
+        <button id="btn-play" class="btn icon-btn" type="button" aria-pressed="false" aria-label="Pause">
+          <span class="icon-pause" aria-hidden="true"></span>
+        </button>
+        <div class="seg" id="speed" role="radiogroup" aria-label="Simulation speed"></div>
+        <button id="btn-cold" class="btn" type="button" title="Restart with the room, water and pipes all at the outside temperature">Cold start</button>
+        <button id="btn-reset" class="btn" type="button" title="Restart with everything at 14 °C">Reset</button>
+      </div>
+    </header>
+
+    <main class="page">
+      <div class="card scene-card">
+        <div id="scene" class="scene"></div>
+
+        <div class="status-row">
+          <span class="water-legend" aria-label="Water colour scale from 10 to 80 degrees">
+            <span>10°</span><span id="water-scale" class="water-scale"></span><span>80°</span>
+          </span>
+        </div>
+
+        <details class="controls-group" id="controls-group">
+          <summary>Controls</summary>
+          <div class="controls">
+            <div class="ctl ctl-power">
+              <span class="ctl-label" id="power-label">Boiler <output id="o-power">On</output></span>
+              <button id="i-power" class="switch" type="button" role="switch" aria-checked="true" aria-labelledby="power-label">
+                <span class="knob"></span>
+              </button>
+            </div>
+            <div class="ctl ctl-flow">
+              <label class="ctl-label" for="i-flow">Flow temp <output id="o-flow">65 °C</output></label>
+              <input id="i-flow" type="range" min="30" max="80" step="1" value="65" />
+            </div>
+            <div class="ctl ctl-stat">
+              <label class="ctl-label" for="i-stat">Thermostat <output id="o-stat">20.0 °C</output></label>
+              <input id="i-stat" type="range" min="5" max="30" step="0.5" value="20" />
+            </div>
+            <div class="ctl ctl-trv">
+              <span class="ctl-label" id="trv-label">TRV <output id="o-trv">≈24 °C</output></span>
+              <div class="seg" id="trv" role="radiogroup" aria-labelledby="trv-label"></div>
+            </div>
+            <div class="ctl ctl-ins">
+              <span class="ctl-label" id="ins-label">Insulation</span>
+              <div class="seg" id="insulation" role="radiogroup" aria-labelledby="ins-label"></div>
+            </div>
+            <div class="ctl ctl-ls">
+              <label class="ctl-label" for="i-ls">Lockshield <output id="o-ls">100%</output></label>
+              <input id="i-ls" type="range" min="10" max="100" step="10" value="100" />
+            </div>
+            <div class="ctl ctl-out">
+              <label class="ctl-label" for="i-out">Outside <output id="o-out">5 °C</output></label>
+              <input id="i-out" type="range" min="-15" max="25" step="1" value="5" />
+            </div>
+          </div>
+          <div class="view-options">
+            <label class="view-toggle"><input id="i-losses" type="checkbox" /> Show heat loss</label>
+            <label class="view-toggle"><input id="i-details" type="checkbox" /> Detailed tooltips</label>
+          </div>
+        </details>
+      </div>
+
+      <details class="card history" id="history">
+        <summary>History (last 6 hours)</summary>
+        <ul class="chart-legend" id="chart-legend"></ul>
+        <div id="chart" class="chart"></div>
+        <details id="table-details" class="table-details">
+          <summary>Show as table</summary>
+          <div class="table-wrap"><table id="data-table"></table></div>
+        </details>
+      </details>
+    </main>
+
+    <div id="tooltip" class="tooltip" role="tooltip" hidden></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

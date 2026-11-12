@@ -1,0 +1,2 @@
+# Keep LF line endings in the repo and working tree (Prettier expects LF).
+* text=auto eol=lf

@@ -9,9 +9,7 @@ import { Container, Graphics, GraphicsContext, type Text } from "pixi.js";
 import { TRV_SETTINGS, type Sim } from "../sim/model";
 import { waterColor } from "./colors";
 import { Polyline } from "./geometry";
-
-export const CUTAWAY_W = 172;
-export const CUTAWAY_H = 200;
+import { CUTAWAY_H, CUTAWAY_W } from "./layout";
 
 const CX = 72; // centre line of orifice, pin and plug
 const SEAT_Y = 122; // top face of the seat

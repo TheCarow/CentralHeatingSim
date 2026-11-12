@@ -1,8 +1,9 @@
 /*
  * The illustrated cut-away house, drawn with PixiJS.
  *
- * Everything is laid out in a fixed 1200 x 700 "design space" inside `world`,
- * which is scaled to fit the canvas. Geometry is built once; per frame we only
+ * Everything is drawn in "design space" inside `world`, which is scaled to fit
+ * the canvas. Positions come from layout.ts, computed from the house plan.
+ * Geometry is built once; per frame we only
  * change tints (water colours), transforms (flow dots, flames, pump) and a few
  * throttled text labels.
  */
@@ -23,7 +24,7 @@ import {
 } from "../sim/model";
 import { PIPE, type RadiatorEdges } from "../sim/circuit";
 import { roomTint, skyTint, waterColor } from "./colors";
-import { CUTAWAY_H, CUTAWAY_W, TrvCutaway } from "./TrvCutaway";
+import { TrvCutaway } from "./TrvCutaway";
 import {
   Polyline,
   distToPolyline,
@@ -31,118 +32,19 @@ import {
   type Pt,
   type Rect,
 } from "./geometry";
-
-export const SCENE_W = 1200;
-export const SCENE_H = 700;
+import { computeLayout, pathFor, type HouseLayout } from "./layout";
 
 const FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 const INK = 0x2b2a27;
 const MUTED = 0x6f6a62;
 const LOSS_COLOR = 0xe8590c;
 
-// ---- Layout (design-space coordinates) ---------------------------------------
-const WALL_X = 1000; // inner face of the external wall
-const LOFT_FLOOR = 76;
-const CEIL_Y = 84;
-const FLOOR_Y = 560;
-const VOID_BOTTOM = 632;
-const ROOM: Rect = { x: 316, y: CEIL_Y, w: WALL_X - 316, h: FLOOR_Y - CEIL_Y };
-const CUPBOARD: Rect = { x: 0, y: CEIL_Y, w: 300, h: FLOOR_Y - CEIL_Y };
-const BOILER: Rect = { x: 90, y: 110, w: 160, h: 250 };
-const DISPLAY: Rect = { x: 104, y: 120, w: 108, h: 30 };
-const POWER = { x: 228, y: 135, r: 9 }; // boiler on/off button
-const CUTAWAY: Rect = { x: 102, y: 158, w: 136, h: 190 };
-const HX: Rect = { x: 116, y: 168, w: 108, h: 38 };
-const BURNER: Rect = { x: 140, y: 208, w: 60, h: 22 };
-const PUMP = { x: 130, y: 300, r: 13 };
-const GAS_X = 172;
 const SHOW_FLUE = false; // exhaust flue on top of the boiler, hidden for now
 const SHOW_GAS_PIPE = false; // gas supply stub under the boiler, hidden for now
 const SHOW_TRV_CUTAWAY = false; // magnified TRV diagram on hover, hidden for now
-const RAD: Rect = { x: 630, y: 392, w: 220, h: 118 };
-const TRV_X = 607;
-const LOCK_X = 873;
-const TAIL_Y = 504;
-const TRV_HEAD: Rect = { x: 592, y: 420, w: 30, h: 64 }; // sits on the valve body
-// Valve bodies: the pipe runs through a cavity inside each one.
-const BODY_UP = 20; // body extends this far above the tail line...
-const BODY_DOWN = 13; // ...and this far below it
-const TRV_BODY: Rect = {
-  x: TRV_X - 13,
-  y: TAIL_Y - BODY_UP,
-  w: 26,
-  h: BODY_UP + BODY_DOWN,
-};
-const LS_BODY: Rect = {
-  x: LOCK_X - 13,
-  y: TAIL_Y - BODY_UP,
-  w: 26,
-  h: BODY_UP + BODY_DOWN,
-};
-const LOCKSHIELD: Rect = { x: LOCK_X - 13, y: TAIL_Y - 36, w: 26, h: 49 };
-// Plug travel on the real units: closed it sits across the inlet just below
-// the corner; fully open it is lifted clear of the channel.
-const PLUG_CLOSED_Y = TAIL_Y + 1;
-const PLUG_TRAVEL = 14; // fully open = plug just clear of the channel
-const THERMOSTAT: Rect = { x: 380, y: 236, w: 90, h: 70 };
-const THERMO_READ_Y = THERMOSTAT.y + 21; // centre of the thermostat's big reading
-const CUT: Rect = { x: 352, y: 338, w: CUTAWAY_W, h: CUTAWAY_H };
-const FLOW_X = 215;
-const RETURN_X = 130;
-const FLOW_Y = 588;
-const RETURN_Y = 612;
-const BOILER_BOTTOM = BOILER.y + BOILER.h;
-const ROOF_ARROW_X = 486;
-
-// Flow and return meet the bypass at two junctions just under the radiator.
-const JUNCTION_Y = 546;
-const ABV = { x: (TRV_X + LOCK_X) / 2, y: JUNCTION_Y };
-const ABV_BOX: Rect = { x: ABV.x - 14, y: JUNCTION_Y - 24, w: 28, h: 32 };
-const FLOW_PATH = new Polyline([
-  { x: FLOW_X, y: BOILER_BOTTOM },
-  { x: FLOW_X, y: FLOW_Y },
-  { x: TRV_X, y: FLOW_Y },
-  { x: TRV_X, y: JUNCTION_Y },
-]);
-const TRV_TAIL_PATH = new Polyline([
-  { x: TRV_X, y: JUNCTION_Y },
-  { x: TRV_X, y: TAIL_Y },
-  { x: RAD.x, y: TAIL_Y },
-]);
-const LS_TAIL_PATH = new Polyline([
-  { x: RAD.x + RAD.w, y: TAIL_Y },
-  { x: LOCK_X, y: TAIL_Y },
-  { x: LOCK_X, y: JUNCTION_Y },
-]);
-const BYPASS_PATH = new Polyline([
-  { x: TRV_X, y: JUNCTION_Y },
-  { x: LOCK_X, y: JUNCTION_Y },
-]);
-const RETURN_PATH = new Polyline([
-  { x: LOCK_X, y: JUNCTION_Y },
-  { x: LOCK_X, y: RETURN_Y },
-  { x: RETURN_X, y: RETURN_Y },
-  { x: RETURN_X, y: BOILER_BOTTOM },
-]);
-const ALL_PIPES = [
-  FLOW_PATH,
-  TRV_TAIL_PATH,
-  LS_TAIL_PATH,
-  BYPASS_PATH,
-  RETURN_PATH,
-];
-const INT_FLOW: Pt[] = [
-  { x: FLOW_X, y: HX.y + HX.h },
-  { x: FLOW_X, y: BOILER_BOTTOM },
-];
-const INT_RETURN: Pt[] = [
-  { x: RETURN_X, y: BOILER_BOTTOM },
-  { x: RETURN_X, y: HX.y + HX.h },
-];
-const GAS_PIPE: Pt[] = [
-  { x: GAS_X, y: BOILER_BOTTOM },
-  { x: GAS_X, y: BOILER_BOTTOM + 38 },
-];
+// Plug travel on the real valves: closed, the plug sits across the inlet just
+// below the corner; fully open, it is lifted clear of the channel.
+const PLUG_TRAVEL = 14;
 const DOT_GAP = 16; // same spacing on every pipe
 
 export type HitKind =
@@ -243,6 +145,8 @@ export class HeatingScene {
   onAdjust?: (kind: HitKind, dir: 1 | -1, source: "click" | "wheel") => void;
 
   private readonly sim: Sim;
+  /** Where everything sits, from the house plan. */
+  private readonly lay: HouseLayout;
   /** The scene draws one room for now: room 0 and its radiator. */
   private readonly radEdges: RadiatorEdges;
   private readonly radLayers: number;
@@ -275,7 +179,7 @@ export class HeatingScene {
   private wallG = new Graphics();
   private loftG = new Graphics();
   private outsideGround = new Graphics();
-  private wallEnd = WALL_X + 72;
+  private wallEnd: number; // outer face of the external wall
   private builtInsulation = "";
 
   // animated pieces
@@ -317,22 +221,21 @@ export class HeatingScene {
 
   constructor(sim: Sim) {
     this.sim = sim;
+    const lay = (this.lay = computeLayout(sim.plan));
+    this.wallEnd = lay.wallX + 72;
     this.cellColor = new Int32Array(sim.N).fill(-1);
     const c = sim.circuit;
     this.radEdges = c.radiators[0];
     this.radLayers = this.radEdges.rad.cells;
-    this.pxPerM = FLOW_PATH.length / c.flowMain[0].lenM;
-    const segments: [Polyline, { first: number; last: number }][] = [
-      [FLOW_PATH, c.flowMain[0]],
-      [TRV_TAIL_PATH, this.radEdges.trvTail],
-      [LS_TAIL_PATH, this.radEdges.lsTail],
-      [BYPASS_PATH, c.bypass],
-      [RETURN_PATH, c.returnMain[0]],
-    ];
-    for (const [path, r] of segments)
+    this.pxPerM = lay.pipes.flow[0].length / c.flowMain[0].lenM;
+    // Split each pipe's drawn path into one piece per model cell.
+    for (const e of c.edges) {
+      const path = pathFor(lay, e.role, e.n);
+      if (!path) continue;
       path
-        .split(r.last - r.first + 1)
-        .forEach((pts, k) => this.pipeCells.set(r.first + k, pts));
+        .split(e.cells)
+        .forEach((pts, k) => this.pipeCells.set(e.first + k, pts));
+    }
   }
 
   async init(el: HTMLElement): Promise<void> {
@@ -381,9 +284,10 @@ export class HeatingScene {
   // ---------------------------------------------------------------------------
 
   private layout(w: number, h: number): void {
-    const s = Math.min(w / SCENE_W, h / SCENE_H);
+    const lay = this.lay;
+    const s = Math.min(w / lay.W, h / lay.H);
     this.world.scale.set(s);
-    this.world.position.set((w - SCENE_W * s) / 2, (h - SCENE_H * s) / 2);
+    this.world.position.set((w - lay.W * s) / 2, (h - lay.H * s) / 2);
     // Keep text crisp when the scene is scaled up.
     // Quantised so small size changes don't re-rasterise every label.
     const res =
@@ -439,28 +343,31 @@ export class HeatingScene {
   }
 
   hitTest(p: Pt): Hit | null {
-    if (p.x < 0 || p.y < 0 || p.x > SCENE_W || p.y > SCENE_H) return null;
+    const lay = this.lay;
+    const bl = lay.boiler;
+    const rl = lay.rooms[0]; // the scene draws one room for now
+    if (p.x < 0 || p.y < 0 || p.x > lay.W || p.y > lay.H) return null;
     const c = this.sim.circuit;
-    if (inRect(p, TRV_HEAD, 3)) return { kind: "trv" };
-    if (inRect(p, TRV_BODY, 2)) return { kind: "trv-inset" };
-    if (this.cutaway.alpha > 0.3 && inRect(p, CUT))
+    if (inRect(p, rl.trvHead, 3)) return { kind: "trv" };
+    if (inRect(p, rl.trvBody, 2)) return { kind: "trv-inset" };
+    if (this.cutaway.alpha > 0.3 && inRect(p, rl.cut))
       return { kind: "trv-inset" };
-    if (Math.hypot(p.x - POWER.x, p.y - POWER.y) <= POWER.r + 3)
+    if (Math.hypot(p.x - bl.power.x, p.y - bl.power.y) <= bl.power.r + 3)
       return { kind: "power" };
-    if (inRect(p, LOCKSHIELD, 2)) return { kind: "lockshield" };
-    if (inRect(p, THERMOSTAT, 2)) return { kind: "thermostat" };
-    if (inRect(p, DISPLAY)) return { kind: "display" };
-    if (Math.hypot(p.x - PUMP.x, p.y - PUMP.y) <= PUMP.r + 2)
+    if (inRect(p, rl.lockshield, 2)) return { kind: "lockshield" };
+    if (inRect(p, lay.thermostat, 2)) return { kind: "thermostat" };
+    if (inRect(p, bl.display)) return { kind: "display" };
+    if (Math.hypot(p.x - bl.pump.x, p.y - bl.pump.y) <= bl.pump.r + 2)
       return { kind: "pump" };
-    if (inRect(p, HX)) return { kind: "cell", cell: c.hx };
-    if (inRect(p, BURNER)) return { kind: "burner" };
-    if (distToPolyline(p, INT_FLOW) <= 6) return { kind: "cell", cell: c.hx };
-    if (distToPolyline(p, INT_RETURN) <= 6)
+    if (inRect(p, bl.hx)) return { kind: "cell", cell: c.hx };
+    if (inRect(p, bl.burner)) return { kind: "burner" };
+    if (distToPolyline(p, bl.intFlow) <= 6) return { kind: "cell", cell: c.hx };
+    if (distToPolyline(p, bl.intReturn) <= 6)
       return { kind: "cell", cell: c.returnMain[0].last };
-    if (SHOW_GAS_PIPE && distToPolyline(p, GAS_PIPE) <= 6)
+    if (SHOW_GAS_PIPE && distToPolyline(p, bl.gasPipe) <= 6)
       return { kind: "gas" };
 
-    if (inRect(p, ABV_BOX)) return { kind: "bypass-valve" };
+    if (inRect(p, lay.bypass.box)) return { kind: "bypass-valve" };
     let best = 9.5;
     let cell = -1;
     for (const [i, pts] of this.pipeCells) {
@@ -469,29 +376,31 @@ export class HeatingScene {
     }
     if (cell >= 0) return { kind: "cell", cell };
 
-    if (inRect(p, RAD)) {
+    if (inRect(p, rl.rad)) {
       const layer = clamp(
-        Math.floor(((p.y - RAD.y) / RAD.h) * this.radLayers),
+        Math.floor(((p.y - rl.rad.y) / rl.rad.h) * this.radLayers),
         0,
         this.radLayers - 1,
       );
       return { kind: "cell", cell: this.radEdges.rad.first + layer };
     }
-    if (inRect(p, BOILER)) return { kind: "boiler" };
+    if (inRect(p, bl.body)) return { kind: "boiler" };
     for (const a of this.arrows)
       if (a.g.visible && inRect(p, a.box, 4)) return { kind: a.kind };
-    if (p.x >= WALL_X && p.x <= this.wallEnd && p.y <= VOID_BOTTOM)
+    if (p.x >= lay.wallX && p.x <= this.wallEnd && p.y <= lay.voidBottom)
       return { kind: "wall" };
-    if (p.y < CEIL_Y && p.x < WALL_X) return { kind: "loft" };
-    if (p.x > this.wallEnd && p.y < VOID_BOTTOM) return { kind: "outside" };
-    if (p.y >= FLOOR_Y && p.y < VOID_BOTTOM && p.x < WALL_X)
+    if (p.y < lay.ceilY && p.x < lay.wallX) return { kind: "loft" };
+    if (p.x > this.wallEnd && p.y < lay.voidBottom) return { kind: "outside" };
+    if (p.y >= lay.floorY && p.y < lay.voidBottom && p.x < lay.wallX)
       return { kind: "void" };
-    if (inRect(p, CUPBOARD)) return { kind: "cupboard" };
-    if (inRect(p, ROOM)) return { kind: "room" };
+    if (inRect(p, lay.cupboard)) return { kind: "cupboard" };
+    if (inRect(p, rl.rect)) return { kind: "room" };
     return null;
   }
 
   private placeHighlight(): void {
+    const lay = this.lay;
+    const rl = lay.rooms[0]; // the scene draws one room for now
     const h = this.hover;
     const rad = this.radEdges.rad;
     this.ring.visible = false;
@@ -506,8 +415,8 @@ export class HeatingScene {
       this.ring.visible = true;
     } else if (i >= rad.first && i <= rad.last) {
       this.layerBox.position.set(
-        RAD.x,
-        RAD.y + ((i - rad.first) * RAD.h) / this.radLayers,
+        rl.rad.x,
+        rl.rad.y + ((i - rad.first) * rl.rad.h) / this.radLayers,
       );
       this.layerBox.visible = true;
     }
@@ -537,37 +446,52 @@ export class HeatingScene {
   }
 
   private buildBackground(): void {
+    const lay = this.lay;
+    const rl = lay.rooms[0]; // the scene draws one room for now
     const g = new Graphics();
     // loft void with rafters
-    g.rect(0, 0, WALL_X, LOFT_FLOOR).fill(0xe8e1d4);
-    for (let x = -60; x < WALL_X; x += 96)
-      g.moveTo(x, LOFT_FLOOR).lineTo(x + 64, 0);
+    g.rect(0, 0, lay.wallX, lay.loftFloor).fill(0xe8e1d4);
+    for (let x = -60; x < lay.wallX; x += 96)
+      g.moveTo(x, lay.loftFloor).lineTo(x + 64, 0);
     g.stroke({ width: 3, color: 0xdad1c1 });
-    g.rect(0, LOFT_FLOOR, WALL_X, CEIL_Y - LOFT_FLOOR).fill(0xd5cec1); // ceiling
-    g.rect(CUPBOARD.x, CUPBOARD.y, CUPBOARD.w, CUPBOARD.h).fill(0xe9e4da);
-    g.rect(300, CEIL_Y, 16, FLOOR_Y - CEIL_Y).fill(0xd3cbbe); // partition
-    g.moveTo(300, CEIL_Y)
-      .lineTo(300, FLOOR_Y)
-      .moveTo(316, CEIL_Y)
-      .lineTo(316, FLOOR_Y);
+    g.rect(0, lay.loftFloor, lay.wallX, lay.ceilY - lay.loftFloor).fill(
+      0xd5cec1,
+    ); // ceiling
+    g.rect(lay.cupboard.x, lay.cupboard.y, lay.cupboard.w, lay.cupboard.h).fill(
+      0xe9e4da,
+    );
+    // internal walls
+    for (const w of lay.partitions) g.rect(w.x, w.y, w.w, w.h).fill(0xd3cbbe);
+    for (const w of lay.partitions)
+      g.moveTo(w.x, w.y)
+        .lineTo(w.x, w.y + w.h)
+        .moveTo(w.x + w.w, w.y)
+        .lineTo(w.x + w.w, w.y + w.h);
     g.stroke({ width: 1, color: 0xbdb4a5 });
     // floorboards
-    g.rect(0, FLOOR_Y, WALL_X, 10).fill(0xa87d54);
-    for (let x = 40; x < WALL_X; x += 80)
-      g.moveTo(x, FLOOR_Y).lineTo(x, FLOOR_Y + 10);
+    g.rect(0, lay.floorY, lay.wallX, 10).fill(0xa87d54);
+    for (let x = 40; x < lay.wallX; x += 80)
+      g.moveTo(x, lay.floorY).lineTo(x, lay.floorY + 10);
     g.stroke({ width: 1, color: 0x8a643f });
     // floor void with joists
-    g.rect(0, FLOOR_Y + 10, WALL_X, VOID_BOTTOM - FLOOR_Y - 10).fill(0x4a433c);
-    for (let x = 30; x < WALL_X; x += 110)
-      g.rect(x, FLOOR_Y + 10, 14, 30).fill(0x6e5c49);
+    g.rect(
+      0,
+      lay.floorY + 10,
+      lay.wallX,
+      lay.voidBottom - lay.floorY - 10,
+    ).fill(0x4a433c);
+    for (let x = 30; x < lay.wallX; x += 110)
+      g.rect(x, lay.floorY + 10, 14, 30).fill(0x6e5c49);
     // ground
-    g.rect(0, VOID_BOTTOM, SCENE_W, SCENE_H - VOID_BOTTOM).fill(0x8b8378);
-    for (let x = -80; x < SCENE_W; x += 22)
-      g.moveTo(x, SCENE_H).lineTo(x + 68, VOID_BOTTOM);
+    g.rect(0, lay.voidBottom, lay.W, lay.H - lay.voidBottom).fill(0x8b8378);
+    for (let x = -80; x < lay.W; x += 22)
+      g.moveTo(x, lay.H).lineTo(x + 68, lay.voidBottom);
     g.stroke({ width: 1, color: 0x7a7267 });
     this.L.bg.addChild(g);
 
-    this.roomWall.rect(ROOM.x, ROOM.y, ROOM.w, ROOM.h).fill(0xffffff);
+    this.roomWall
+      .rect(rl.rect.x, rl.rect.y, rl.rect.w, rl.rect.h)
+      .fill(0xffffff);
     this.L.bg.addChild(this.roomWall);
   }
 
@@ -582,14 +506,15 @@ export class HeatingScene {
 
   /** Wall build-up, loft insulation and outside area — depends on insulation level. */
   private rebuildFabric(): void {
+    const lay = this.lay;
     const ins = this.sim.insulation;
     this.builtInsulation = this.sim.params.insulation;
 
     const g = this.wallG.clear();
     const top = 0;
-    const bottom = VOID_BOTTOM;
+    const bottom = lay.voidBottom;
     const H = bottom - top;
-    let x = WALL_X;
+    let x = lay.wallX;
     const layer = (w: number, color: number) => {
       g.rect(x, top, w, H).fill(color);
       const r = { x, w };
@@ -635,7 +560,7 @@ export class HeatingScene {
         layer(4, 0xf3eee4); // render
       }
     }
-    g.rect(WALL_X, top, x - WALL_X, H).stroke({
+    g.rect(lay.wallX, top, x - lay.wallX, H).stroke({
       width: 1,
       color: 0x8f877b,
       alignment: 1,
@@ -644,51 +569,56 @@ export class HeatingScene {
 
     this.sky
       .clear()
-      .rect(x, 0, SCENE_W - x, FLOOR_Y)
+      .rect(x, 0, lay.W - x, lay.floorY)
       .fill(0xffffff);
     this.outsideGround
       .clear()
-      .rect(x, FLOOR_Y - 4, SCENE_W - x, 10)
+      .rect(x, lay.floorY - 4, lay.W - x, 10)
       .fill(0x7da35c)
-      .rect(x, FLOOR_Y + 6, SCENE_W - x, VOID_BOTTOM - FLOOR_Y - 6)
+      .rect(x, lay.floorY + 6, lay.W - x, lay.voidBottom - lay.floorY - 6)
       .fill(0x8a7660);
 
     // loft insulation
     const th = Math.max(3, ins.loft.mm * 0.14);
     const lg = this.loftG
       .clear()
-      .rect(0, LOFT_FLOOR - th, WALL_X, th)
+      .rect(0, lay.loftFloor - th, lay.wallX, th)
       .fill(0xf2c94c);
     if (th > 6) {
-      lg.moveTo(0, LOFT_FLOOR - 2);
-      for (let xx = 0, k = 0; xx <= WALL_X; xx += 10, k++)
-        lg.lineTo(xx, k % 2 ? LOFT_FLOOR - th + 2 : LOFT_FLOOR - 2);
+      lg.moveTo(0, lay.loftFloor - 2);
+      for (let xx = 0, k = 0; xx <= lay.wallX; xx += 10, k++)
+        lg.lineTo(xx, k % 2 ? lay.loftFloor - th + 2 : lay.loftFloor - 2);
       lg.stroke({ width: 1.2, color: 0xd29f24 });
     }
     this.loftText.text = `Loft insulation ${ins.loft.mm} mm`;
-    this.loftText.y = Math.max(4, LOFT_FLOOR - th - 18);
+    this.loftText.y = Math.max(4, lay.loftFloor - th - 18);
 
-    const cx = (x + SCENE_W) / 2;
+    const cx = (x + lay.W) / 2;
     this.outsideTitle.x = cx;
     this.outsideTemp.x = cx;
-    for (const s of this.snow) s.x = x + Math.random() * (SCENE_W - x);
+    for (const s of this.snow) s.x = x + Math.random() * (lay.W - x);
     this.layoutArrows();
   }
 
   private buildPipes(): void {
+    const lay = this.lay;
+    const rl = lay.rooms[0]; // the scene draws one room for now
     const sim = this.sim;
     const casing = new Graphics();
-    for (const path of ALL_PIPES)
+    for (const e of sim.circuit.edges) {
+      const path = pathFor(lay, e.role, e.n);
+      if (!path) continue;
       poly(casing, path.pts).stroke({
         width: 13,
         color: 0x36312c,
         cap: "round",
         join: "round",
       });
+    }
     // Valve bodies go *under* the pipe so the water and flow dots are seen
     // passing through them. The dark cavity reads as the inside of the body.
     const bodies = new Graphics();
-    for (const b of [TRV_BODY, LS_BODY]) {
+    for (const b of [rl.trvBody, rl.lsBody]) {
       bodies
         .roundRect(b.x, b.y, b.w, b.h, 4)
         .fill(0xd3d8dd)
@@ -705,8 +635,8 @@ export class HeatingScene {
     const c = sim.circuit;
     const r = this.radEdges;
     const half = 4; // half the water stroke width
-    const A = { x: TRV_X, y: JUNCTION_Y };
-    const B = { x: LOCK_X, y: JUNCTION_Y };
+    const A = { x: rl.trvX, y: lay.junctionY };
+    const B = { x: rl.lockX, y: lay.junctionY };
     const startAt = (p: Pt) => (pts: Pt[]) => [p, ...pts.slice(1)];
     const endAt = (p: Pt) => (pts: Pt[]) => [...pts.slice(0, -1), p];
     const junctionEnds = new Map<number, (pts: Pt[]) => Pt[]>([
@@ -750,26 +680,26 @@ export class HeatingScene {
     // Circuit distances: flow pipe from 0; both branches start where it ends;
     // the return carries on from the end of the bypass, and the lockshield
     // tail is placed so it also lines up with the return.
-    const lf = FLOW_PATH.length;
-    const lb = BYPASS_PATH.length;
+    const lf = lay.pipes.flow[0].length;
+    const lb = lay.pipes.bypass.length;
     group(
       [
-        { path: FLOW_PATH, u: 0 },
-        { path: RETURN_PATH, u: lf + lb },
+        { path: lay.pipes.flow[0], u: 0 },
+        { path: lay.pipes.ret[0], u: lf + lb },
       ],
       () => sim.flowLpm,
     );
     group(
       [
-        { path: TRV_TAIL_PATH, u: lf },
-        { path: LS_TAIL_PATH, u: lf + lb - LS_TAIL_PATH.length },
+        { path: lay.pipes.trvTail[0], u: lf },
+        { path: lay.pipes.lsTail[0], u: lf + lb - lay.pipes.lsTail[0].length },
       ],
       () => sim.radFlowLpm(0),
     );
-    group([{ path: BYPASS_PATH, u: lf }], () => sim.bypassLpm);
+    group([{ path: lay.pipes.bypass, u: lf }], () => sim.bypassLpm);
 
     // Automatic bypass valve: spring-loaded, opens as the TRV closes.
-    const { x, y } = ABV;
+    const { x, y } = lay.bypass.valve;
     const abv = new Graphics()
       .poly([x - 12, y - 8, x, y, x - 12, y + 8])
       .fill(0xcfa94e)
@@ -794,33 +724,35 @@ export class HeatingScene {
   }
 
   private buildRadiator(): void {
+    const lay = this.lay;
+    const rl = lay.rooms[0]; // the scene draws one room for now
     const R = this.radLayers;
-    const lh = RAD.h / R;
+    const lh = rl.rad.h / R;
     const grille = new Graphics()
-      .roundRect(RAD.x + 3, RAD.y - 7, RAD.w - 6, 8, 2)
+      .roundRect(rl.rad.x + 3, rl.rad.y - 7, rl.rad.w - 6, 8, 2)
       .fill(0xdedcd6)
       .stroke({ width: 1, color: 0x9a968f });
-    for (let x = RAD.x + 8; x < RAD.x + RAD.w - 6; x += 5)
-      grille.moveTo(x, RAD.y - 5).lineTo(x, RAD.y - 1);
+    for (let x = rl.rad.x + 8; x < rl.rad.x + rl.rad.w - 6; x += 5)
+      grille.moveTo(x, rl.rad.y - 5).lineTo(x, rl.rad.y - 1);
     grille.stroke({ width: 1, color: 0x9a968f, alpha: 0.7 });
     this.L.devices.addChild(grille);
 
     for (let i = 0; i < R; i++) {
       const g = new Graphics()
-        .rect(RAD.x, RAD.y + i * lh, RAD.w, lh + 0.6)
+        .rect(rl.rad.x, rl.rad.y + i * lh, rl.rad.w, lh + 0.6)
         .fill(0xffffff);
       this.L.devices.addChild(g);
       this.cellG[this.radEdges.rad.first + i] = g;
     }
     const over = new Graphics();
-    for (let x = RAD.x + 9; x < RAD.x + RAD.w - 4; x += 10)
-      over.moveTo(x, RAD.y + 3).lineTo(x, RAD.y + RAD.h - 3);
+    for (let x = rl.rad.x + 9; x < rl.rad.x + rl.rad.w - 4; x += 10)
+      over.moveTo(x, rl.rad.y + 3).lineTo(x, rl.rad.y + rl.rad.h - 3);
     over.stroke({ width: 2, color: 0x000000, alpha: 0.1 });
-    for (let x = RAD.x + 12; x < RAD.x + RAD.w - 4; x += 10)
-      over.moveTo(x, RAD.y + 3).lineTo(x, RAD.y + RAD.h - 3);
+    for (let x = rl.rad.x + 12; x < rl.rad.x + rl.rad.w - 4; x += 10)
+      over.moveTo(x, rl.rad.y + 3).lineTo(x, rl.rad.y + rl.rad.h - 3);
     over.stroke({ width: 1, color: 0xffffff, alpha: 0.18 });
     over
-      .roundRect(RAD.x, RAD.y, RAD.w, RAD.h, 3)
+      .roundRect(rl.rad.x, rl.rad.y, rl.rad.w, rl.rad.h, 3)
       .stroke({ width: 2, color: 0x76726b });
     this.L.devices.addChild(over);
 
@@ -832,69 +764,69 @@ export class HeatingScene {
       .roundRect(-7, 0, 14, 6, 1.5)
       .fill(0x1f1f1f);
     this.trvPlug = new Graphics(plugCtx);
-    this.trvPlug.position.set(TRV_X, PLUG_CLOSED_Y - PLUG_TRAVEL);
+    this.trvPlug.position.set(rl.trvX, rl.plugClosedY - PLUG_TRAVEL);
     // Lockshield: short spindle that ends inside its cap; left fully open.
     const lsPlug = this.lsPlug
       .rect(-1.5, -16, 3, 16)
       .fill(0xa7afb7)
       .roundRect(-7, 0, 14, 6, 1.5)
       .fill(0x1f1f1f);
-    lsPlug.position.set(LOCK_X, PLUG_CLOSED_Y - PLUG_TRAVEL); // moved by the setting in update()
+    lsPlug.position.set(rl.lockX, rl.plugClosedY - PLUG_TRAVEL); // moved by the setting in update()
     this.L.devices.addChild(this.trvPlug, lsPlug);
 
     // Union nuts where the pipes leave each body.
     const nuts = new Graphics()
-      .rect(TRV_X - 8, TAIL_Y + BODY_DOWN - 3, 16, 4)
-      .rect(TRV_X + 10, TAIL_Y - 8, 4, 16)
-      .rect(LOCK_X - 14, TAIL_Y - 8, 4, 16)
-      .rect(LOCK_X - 8, TAIL_Y + BODY_DOWN - 3, 16, 4)
+      .rect(rl.trvX - 8, rl.trvBody.y + rl.trvBody.h - 3, 16, 4)
+      .rect(rl.trvX + 10, rl.tailY - 8, 4, 16)
+      .rect(rl.lockX - 14, rl.tailY - 8, 4, 16)
+      .rect(rl.lockX - 8, rl.lsBody.y + rl.lsBody.h - 3, 16, 4)
       .fill(0xb9c0c7)
       .stroke({ width: 1, color: 0x7d858c });
     this.L.devices.addChild(nuts);
 
     const v = new Graphics()
-      .roundRect(TRV_HEAD.x, TRV_HEAD.y, TRV_HEAD.w, TRV_HEAD.h, 6)
+      .roundRect(rl.trvHead.x, rl.trvHead.y, rl.trvHead.w, rl.trvHead.h, 6)
       .fill(0xfbfbf9)
       .stroke({ width: 1.5, color: 0xa9a399 });
-    for (let y = TRV_HEAD.y + 7; y < TRV_HEAD.y + 28; y += 4)
-      v.moveTo(TRV_HEAD.x + 4, y).lineTo(TRV_HEAD.x + TRV_HEAD.w - 4, y);
+    for (let y = rl.trvHead.y + 7; y < rl.trvHead.y + 28; y += 4)
+      v.moveTo(rl.trvHead.x + 4, y).lineTo(rl.trvHead.x + rl.trvHead.w - 4, y);
     v.stroke({ width: 1, color: 0xcfc9be });
-    v.roundRect(TRV_HEAD.x + 4, TRV_HEAD.y + 32, TRV_HEAD.w - 8, 26, 3)
+    v.roundRect(rl.trvHead.x + 4, rl.trvHead.y + 32, rl.trvHead.w - 8, 26, 3)
       .fill(0xf0eee8)
       .stroke({ width: 1, color: 0xbdb6aa });
-    v.roundRect(LOCK_X - 7, TAIL_Y - 36, 14, 17, 3)
+    v.roundRect(rl.lockX - 7, rl.tailY - 36, 14, 17, 3)
       .fill(0xfbfbf9)
       .stroke({ width: 1, color: 0xa9a399 });
     // Magnifier: leader from the cut-away to the real valve body.
     const lead = this.cutLead
-      .circle(TRV_X, TAIL_Y - 4, 22)
+      .circle(rl.trvX, rl.tailY - 4, 22)
       .stroke({ width: 1.5, color: 0x8a857c })
-      .moveTo(CUT.x + CUT.w, CUT.y + 107)
-      .lineTo(TRV_X - 21, TAIL_Y - 8)
+      .moveTo(rl.cut.x + rl.cut.w, rl.cut.y + 107)
+      .lineTo(rl.trvX - 21, rl.tailY - 8)
       .stroke({ width: 1.5, color: 0x8a857c });
     this.L.devices.addChild(v, lead);
 
     this.cutaway = new TrvCutaway((s, x, y, o) => this.label(s, x, y, o));
-    this.cutaway.position.set(CUT.x, CUT.y);
+    this.cutaway.position.set(rl.cut.x, rl.cut.y);
     // Shown only while the TRV is hovered (see update()).
     this.cutaway.alpha = lead.alpha = 0;
     this.cutaway.visible = lead.visible = false;
     this.L.devices.addChild(this.cutaway);
 
-    this.trvNumber = this.label("4", TRV_X, TRV_HEAD.y + 45, {
+    this.trvNumber = this.label("4", rl.trvX, rl.trvHead.y + 45, {
       size: 16,
       weight: "700",
       ax: 0.5,
       ay: 0.5,
     });
-    this.trvLabel = this.label("TRV", TRV_X, TRV_HEAD.y - 4, {
+    this.trvLabel = this.label("TRV", rl.trvX, rl.trvHead.y - 4, {
       size: 12,
       weight: "700",
       ax: 0.5,
       ay: 1,
     });
     this.trvLabel.visible = false; // shown only while the TRV is hovered
-    this.lsLabel = this.label("Lockshield", LOCK_X + 16, TAIL_Y - 38, {
+    this.lsLabel = this.label("Lockshield", rl.lockX + 16, rl.tailY - 38, {
       size: 11,
       color: MUTED,
     });
@@ -902,6 +834,8 @@ export class HeatingScene {
   }
 
   private buildBoiler(): void {
+    const lay = this.lay;
+    const bl = lay.boiler;
     const b = new Graphics();
     if (SHOW_FLUE)
       b.rect(100, 90, 20, 22)
@@ -909,35 +843,35 @@ export class HeatingScene {
         .stroke({ width: 1, color: 0x9a948a })
         .circle(110, 90, 10)
         .fill(0xa9a49a);
-    b.roundRect(BOILER.x, BOILER.y, BOILER.w, BOILER.h, 10)
+    b.roundRect(bl.body.x, bl.body.y, bl.body.w, bl.body.h, 10)
       .fill(0xf8f8f6)
       .stroke({ width: 2, color: 0xb3ada2 })
-      .roundRect(DISPLAY.x, DISPLAY.y, DISPLAY.w, DISPLAY.h, 4)
+      .roundRect(bl.display.x, bl.display.y, bl.display.w, bl.display.h, 4)
       .fill(0x1f2b26)
-      .roundRect(CUTAWAY.x, CUTAWAY.y, CUTAWAY.w, CUTAWAY.h, 6)
+      .roundRect(bl.cutaway.x, bl.cutaway.y, bl.cutaway.w, bl.cutaway.h, 6)
       .fill(0x2b2723);
     // gas pipe stub
     if (SHOW_GAS_PIPE) {
-      poly(b, GAS_PIPE).stroke({ width: 9, color: 0x6b5a1e, cap: "round" });
-      poly(b, GAS_PIPE).stroke({ width: 5, color: 0xe2b93b, cap: "round" });
+      poly(b, bl.gasPipe).stroke({ width: 9, color: 0x6b5a1e, cap: "round" });
+      poly(b, bl.gasPipe).stroke({ width: 5, color: 0xe2b93b, cap: "round" });
     }
     // internal pipe casings
-    poly(b, INT_FLOW).stroke({ width: 9, color: 0x161412 });
-    poly(b, INT_RETURN).stroke({ width: 9, color: 0x161412 });
+    poly(b, bl.intFlow).stroke({ width: 9, color: 0x161412 });
+    poly(b, bl.intReturn).stroke({ width: 9, color: 0x161412 });
     this.L.devices.addChild(b);
 
-    poly(this.intFlowG, INT_FLOW).stroke({ width: 5, color: 0xffffff });
-    poly(this.intRetG, INT_RETURN).stroke({ width: 5, color: 0xffffff });
-    this.hxG.roundRect(HX.x, HX.y, HX.w, HX.h, 4).fill(0xffffff);
+    poly(this.intFlowG, bl.intFlow).stroke({ width: 5, color: 0xffffff });
+    poly(this.intRetG, bl.intReturn).stroke({ width: 5, color: 0xffffff });
+    this.hxG.roundRect(bl.hx.x, bl.hx.y, bl.hx.w, bl.hx.h, 4).fill(0xffffff);
     const fins = new Graphics();
-    for (let x = HX.x + 5; x < HX.x + HX.w - 2; x += 6)
-      fins.moveTo(x, HX.y + 2).lineTo(x, HX.y + HX.h - 2);
+    for (let x = bl.hx.x + 5; x < bl.hx.x + bl.hx.w - 2; x += 6)
+      fins.moveTo(x, bl.hx.y + 2).lineTo(x, bl.hx.y + bl.hx.h - 2);
     fins.stroke({ width: 1.5, color: 0x000000, alpha: 0.22 });
     fins
-      .roundRect(HX.x, HX.y, HX.w, HX.h, 4)
+      .roundRect(bl.hx.x, bl.hx.y, bl.hx.w, bl.hx.h, 4)
       .stroke({ width: 1.5, color: 0x0f0d0b });
     const burnerBar = new Graphics()
-      .rect(BURNER.x, BURNER.y + BURNER.h - 4, BURNER.w, 4)
+      .rect(bl.burner.x, bl.burner.y + bl.burner.h - 4, bl.burner.w, 4)
       .fill(0x8d8d8d);
     this.L.devices.addChild(
       this.intFlowG,
@@ -961,13 +895,13 @@ export class HeatingScene {
       .fill(0x60a5fa);
     for (let i = 0; i < 5; i++) {
       const f = new Graphics(flameCtx);
-      f.position.set(BURNER.x + 8 + i * 11, BURNER.y + BURNER.h - 4);
+      f.position.set(bl.burner.x + 8 + i * 11, bl.burner.y + bl.burner.h - 4);
       this.flames.push(f);
       this.L.devices.addChild(f);
     }
 
     const pump = new Graphics()
-      .circle(PUMP.x, PUMP.y, PUMP.r)
+      .circle(bl.pump.x, bl.pump.y, bl.pump.r)
       .fill(0x56606b)
       .stroke({ width: 1.5, color: 0x9aa3ad });
     for (let k = 0; k < 3; k++) {
@@ -978,13 +912,13 @@ export class HeatingScene {
       .stroke({ width: 2.5, color: 0xe5e7eb, cap: "round" })
       .circle(0, 0, 2.5)
       .fill(0xe5e7eb);
-    this.impeller.position.set(PUMP.x, PUMP.y);
+    this.impeller.position.set(bl.pump.x, bl.pump.y);
     this.L.devices.addChild(pump, this.impeller);
 
     this.displayTemp = this.label(
       "",
-      DISPLAY.x + 9,
-      DISPLAY.y + DISPLAY.h / 2,
+      bl.display.x + 9,
+      bl.display.y + bl.display.h / 2,
       {
         size: 16,
         weight: "700",
@@ -994,8 +928,8 @@ export class HeatingScene {
     );
     this.displayStatus = this.label(
       "",
-      DISPLAY.x + DISPLAY.w - 8,
-      DISPLAY.y + DISPLAY.h / 2,
+      bl.display.x + bl.display.w - 8,
+      bl.display.y + bl.display.h / 2,
       {
         size: 9,
         weight: "600",
@@ -1006,23 +940,23 @@ export class HeatingScene {
       },
     );
     // Power button: tinted green (on) or grey (off); glyph stays white.
-    this.powerBtn.circle(POWER.x, POWER.y, POWER.r).fill(0xffffff);
+    this.powerBtn.circle(bl.power.x, bl.power.y, bl.power.r).fill(0xffffff);
     const glyph = new Graphics()
       .arc(
-        POWER.x,
-        POWER.y + 0.5,
+        bl.power.x,
+        bl.power.y + 0.5,
         4.3,
         -Math.PI / 2 + 0.75,
         (3 * Math.PI) / 2 - 0.75,
       )
       .stroke({ width: 1.6, color: 0xffffff, cap: "round" })
-      .moveTo(POWER.x, POWER.y - 5)
-      .lineTo(POWER.x, POWER.y - 0.5)
+      .moveTo(bl.power.x, bl.power.y - 5)
+      .lineTo(bl.power.x, bl.power.y - 0.5)
       .stroke({ width: 1.6, color: 0xffffff, cap: "round" });
     this.L.devices.addChild(this.powerBtn, glyph);
 
     if (SHOW_GAS_PIPE)
-      this.label("Gas", GAS_X, BOILER_BOTTOM + 42, {
+      this.label("Gas", bl.gasX, bl.bottom + 42, {
         size: 11,
         color: MUTED,
         ax: 0.5,
@@ -1030,7 +964,8 @@ export class HeatingScene {
   }
 
   private buildThermostat(): void {
-    const T = THERMOSTAT;
+    const lay = this.lay;
+    const T = lay.thermostat;
     const g = new Graphics()
       .roundRect(T.x, T.y, T.w, T.h, 8)
       .fill(0xfdfdfb)
@@ -1041,7 +976,7 @@ export class HeatingScene {
       .fill(0xffffff);
     this.led.circle(T.x + T.w - 14, T.y + T.h - 11, 4).fill(0xffffff);
     this.L.devices.addChild(g, this.thermoScreen, this.led);
-    this.thermoTemp = this.label("", T.x + T.w / 2, THERMO_READ_Y, {
+    this.thermoTemp = this.label("", T.x + T.w / 2, lay.thermoReadY, {
       size: 20,
       weight: "700",
       color: 0x1d2a24,
@@ -1064,6 +999,8 @@ export class HeatingScene {
   }
 
   private buildEffects(): void {
+    const lay = this.lay;
+    const rl = lay.rooms[0]; // the scene draws one room for now
     // snow
     const snowCtx = new GraphicsContext()
       .circle(0, 0, 2)
@@ -1073,7 +1010,7 @@ export class HeatingScene {
       this.snow.push({
         g,
         x: 0,
-        y: Math.random() * FLOOR_Y,
+        y: Math.random() * lay.floorY,
         v: 18 + Math.random() * 22,
       });
       this.L.fx.addChild(g);
@@ -1111,13 +1048,14 @@ export class HeatingScene {
       .circle(0, 0, 9)
       .stroke({ width: 1.5, color: 0xffffff });
     this.layerBox
-      .rect(-2, -1, RAD.w + 4, RAD.h / this.radLayers + 2)
+      .rect(-2, -1, rl.rad.w + 4, rl.rad.h / this.radLayers + 2)
       .stroke({ width: 2, color: 0xffffff });
     this.ring.visible = this.layerBox.visible = false;
     this.L.overlay.addChild(this.ring, this.layerBox);
   }
 
   private buildLabels(): void {
+    const lay = this.lay;
     this.loftText = this.label("", 24, 30, {
       size: 11,
       weight: "600",
@@ -1125,7 +1063,7 @@ export class HeatingScene {
     });
     this.loftText.visible = false; // shown only while the loft is hovered
     // Outside reading sits level with the thermostat's temperature reading.
-    this.outsideTitle = this.label("OUTSIDE", 0, THERMO_READ_Y - 13, {
+    this.outsideTitle = this.label("OUTSIDE", 0, lay.thermoReadY - 13, {
       size: 11,
       weight: "600",
       color: 0x33475b,
@@ -1133,7 +1071,7 @@ export class HeatingScene {
       ay: 1,
       spacing: 1,
     });
-    this.outsideTemp = this.label("", 0, THERMO_READ_Y, {
+    this.outsideTemp = this.label("", 0, lay.thermoReadY, {
       size: 20,
       weight: "700",
       color: 0x1f3347,
@@ -1148,14 +1086,16 @@ export class HeatingScene {
   }
 
   private drawArrows(): void {
+    const lay = this.lay;
     const lw = this.sim.lossWatts();
     const watts: Record<string, number> = {
       "loss-wall": lw.wall,
       "loss-vent": lw.vent,
       "loss-roof": lw.roof,
     };
-    const x1 = WALL_X - 40;
-    const x2 = Math.min(SCENE_W - 6, this.wallEnd + 66);
+    const la = lay.losses;
+    const x1 = la.wallX1;
+    const x2 = Math.min(lay.W - 6, this.wallEnd + 66);
     for (const a of this.arrows) {
       const W = watts[a.kind];
       const show = this.showLosses && W > 5;
@@ -1169,9 +1109,9 @@ export class HeatingScene {
       const hw = w / 2 + 4 + w * 0.25;
       const g = a.g.clear();
       if (a.kind === "loss-roof") {
-        const x = ROOF_ARROW_X;
-        const yb = 150;
-        const yt = 6;
+        const x = la.roofX;
+        const yb = la.roofBottom;
+        const yt = la.roofTop;
         g.poly([
           x - w / 2,
           yb,
@@ -1196,7 +1136,7 @@ export class HeatingScene {
         a.box = { x: x - hw, y: yt, w: hw * 2 + 70, h: yb - yt };
       } else {
         // Draughts arrow sits above the outside reading so their labels never clash.
-        const y = a.kind === "loss-vent" ? 150 : 445;
+        const y = a.kind === "loss-vent" ? la.ventY : la.wallY;
         g.poly([
           x1,
           y - w / 2,
@@ -1229,6 +1169,8 @@ export class HeatingScene {
 
   /** @param dt real seconds since last frame, @param speed sim-seconds per real second (0 when paused) */
   update(dt: number, speed: number): void {
+    const lay = this.lay;
+    const rl = lay.rooms[0]; // the scene draws one room for now
     const sim = this.sim;
     const p = sim.params;
     this.clock += dt;
@@ -1284,7 +1226,7 @@ export class HeatingScene {
 
     // The plug in the real TRV body tracks the valve opening.
     this.trvLift += (room.trvOpening - this.trvLift) * Math.min(1, dt * 6);
-    this.trvPlug.y = PLUG_CLOSED_Y - PLUG_TRAVEL * this.trvLift;
+    this.trvPlug.y = rl.plugClosedY - PLUG_TRAVEL * this.trvLift;
 
     if (sim.pumpOn && speed > 0)
       this.impeller.rotation += dt * (3 + 12 * room.trvOpening);
@@ -1306,9 +1248,9 @@ export class HeatingScene {
       s.g.visible = snowing;
       if (!snowing) continue;
       s.y += s.v * dt;
-      if (s.y > FLOOR_Y - 6) {
+      if (s.y > lay.floorY - 6) {
         s.y = 0;
-        s.x = this.wallEnd + 4 + Math.random() * (SCENE_W - this.wallEnd - 8);
+        s.x = this.wallEnd + 4 + Math.random() * (lay.W - this.wallEnd - 8);
       }
       s.g.position.set(s.x + Math.sin(this.clock * 1.3 + s.v) * 3, s.y);
     }
@@ -1328,7 +1270,7 @@ export class HeatingScene {
     const h = this.hover;
     this.loftText.visible = h?.kind === "loft";
     this.lsLabel.visible = h?.kind === "lockshield";
-    this.lsPlug.y = PLUG_CLOSED_Y - PLUG_TRAVEL * radiator.lockshield;
+    this.lsPlug.y = rl.plugClosedY - PLUG_TRAVEL * radiator.lockshield;
     this.trvLabel.visible = h?.kind === "trv" || h?.kind === "trv-inset";
     this.abvLabel.visible = h?.kind === "bypass-valve";
 

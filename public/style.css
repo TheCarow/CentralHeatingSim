@@ -1,4 +1,5 @@
 :root {
+  /* Light theme only, whatever the system setting. */
   color-scheme: light;
   --page: #f6f4ef;
   --surface-1: #fcfcfb;
@@ -14,8 +15,8 @@
   --grid: #e1e0d9;
   --baseline: #c3c2b7;
   --wash: #e34948;
-  /* chart series (validated CVD-safe per panel; room lines in order
-     room, room-2, room-3 alongside outdoor) */
+  /* chart series (validated CVD-safe per panel on this light surface; room
+     lines in order room, room-2, room-3 alongside outdoor) */
   --series-room: #eb6834;
   --series-room-2: #6250d6;
   --series-room-3: #eda100;
@@ -27,36 +28,6 @@
   --tip-bg: #ffffff;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.08);
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:where(:not([data-theme="light"])) {
-    color-scheme: dark;
-    --page: #0d0d0d;
-    --surface-1: #1a1a19;
-    --surface-2: #262624;
-    --border: rgba(255, 255, 255, 0.1);
-    --text-primary: #f0efec;
-    --text-secondary: #c3c2b7;
-    --text-muted: #898781;
-    --accent: #f0703a;
-    --accent-soft: rgba(240, 112, 58, 0.16);
-    --on-accent: #1a1a19;
-    --warn-ink: #f7c873;
-    --grid: #2c2c2a;
-    --baseline: #383835;
-    --wash: #e66767;
-    --series-room: #d95926;
-    --series-room-2: #9085e9;
-    --series-room-3: #c98500;
-    --series-outdoor: #199e70;
-    --series-flow: #e66767;
-    --series-return: #3987e5;
-    --ref-strong: #f0efec;
-    --ref-muted: #898781;
-    --tip-bg: #262624;
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.45);
-  }
 }
 
 *,

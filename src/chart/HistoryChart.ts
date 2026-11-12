@@ -213,13 +213,6 @@ export class HistoryChart {
     });
 
     this.readTheme();
-    matchMedia("(prefers-color-scheme: dark)").addEventListener(
-      "change",
-      () => {
-        this.readTheme();
-        this.render();
-      },
-    );
   }
 
   /** Chart a different house (another number of rooms). */

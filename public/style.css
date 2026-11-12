@@ -9,6 +9,7 @@
   --text-muted: #898781;
   --accent: #c2410c;
   --accent-soft: rgba(194, 65, 12, 0.1);
+  --on-accent: #ffffff; /* symbols drawn on an accent fill */
   --warn-ink: #8a4b00;
   --grid: #e1e0d9;
   --baseline: #c3c2b7;
@@ -40,6 +41,7 @@
     --text-muted: #898781;
     --accent: #f0703a;
     --accent-soft: rgba(240, 112, 58, 0.16);
+    --on-accent: #1a1a19;
     --warn-ink: #f7c873;
     --grid: #2c2c2a;
     --baseline: #383835;
@@ -139,6 +141,13 @@ h1 {
 
 .playback-icon {
   display: block;
+}
+
+/* The playback option that's on is filled with the accent colour. */
+#speed button[aria-checked="true"] {
+  background: var(--accent);
+  color: var(--on-accent);
+  box-shadow: none;
 }
 
 /* number of rooms, at the start of the top bar */

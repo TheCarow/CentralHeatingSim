@@ -118,13 +118,10 @@ const DEFAULT_SPEED = 20;
     paused = !paused;
     syncSpeed();
   };
-  document.getElementById("btn-cold")!.addEventListener("click", () => {
-    // Everything — room, water, pipes, TRV sensor — at the outdoor temperature.
-    sim.reset(sim.params.outdoor);
-    if (chartVisible()) chart.render();
-  });
   document.getElementById("btn-reset")!.addEventListener("click", () => {
-    sim.reset();
+    // Cold start: rooms, water, pipes and TRV sensors all at the outdoor
+    // temperature, as when the page opens.
+    sim.reset(sim.params.outdoor);
     if (chartVisible()) chart.render();
   });
   document.addEventListener("keydown", (e) => {

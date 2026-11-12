@@ -37,8 +37,8 @@ recorded values (`tests/golden/sim-baseline.json`). Re-record it with
 Shift+click turns a device down. Hover anything in the diagram for live
 details. Pipe colour runs blue (10 °C) to red (80 °C).
 
-**Cold start** restarts with the rooms, water and pipes all at the outside
-temperature. **Reset** restarts with everything at 14 °C. Changing the number
+**Reset** restarts from cold: the rooms, water and pipes all at the outside
+temperature, as when the page opens. Changing the number
 of rooms keeps the whole-house settings and the settings of radiators that are
 still there, and cold-starts the new house.
 

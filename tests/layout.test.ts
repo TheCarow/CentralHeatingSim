@@ -79,8 +79,11 @@ describe.each(Array.from({ length: MAX_ROOMS }, (_, i) => i + 1))(
         expect(lay.partitions[k].x).toBe(x);
         expect(r.rect.x).toBe(x + lay.partitions[k].w);
         x = r.rect.x + r.rect.w;
-        // the radiator and both valves sit inside their room
+        // the radiator, both valves and the temperature reading sit inside
         expect(r.trvHead.x).toBeGreaterThan(r.rect.x);
+        expect(r.reading.x).toBeGreaterThan(r.rect.x);
+        expect(r.reading.x).toBeLessThan(x);
+        expect(r.reading.y).toBe(lay.thermoReadY);
         expect(r.lockshield.x + r.lockshield.w).toBeLessThan(x);
       });
       expect(lay.wallX).toBe(x);

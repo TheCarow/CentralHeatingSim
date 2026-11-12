@@ -1,6 +1,7 @@
 /*
  * One room: its wall tint, the radiator (water in layers), the TRV and
- * lockshield with their moving plugs, and the TRV cut-away.
+ * lockshield with their moving plugs, the TRV cut-away, and - in rooms
+ * without the thermostat - a temperature reading on the wall.
  */
 import { Graphics, GraphicsContext, type Text } from "pixi.js";
 import { TRV_SETTINGS } from "../../sim/model";
@@ -52,6 +53,8 @@ export class RoomView implements View {
   private readonly trvNumber: Text;
   private readonly trvLabel: Text;
   private readonly lsLabel: Text;
+  /** Room temperature, where the thermostat doesn't already show it. */
+  private readonly reading: Text | null = null;
 
   constructor(ctx: SceneContext, index: number) {
     this.ctx = ctx;
@@ -165,6 +168,26 @@ export class RoomView implements View {
     });
     this.lsLabel.visible = false; // appears only while the lockshield is hovered
 
+    // Rooms without the thermostat show their temperature on the wall, styled
+    // like the outside reading and level with the thermostat's.
+    if (index !== sim.thermostatRoom) {
+      const at = rl.reading;
+      ctx.label(sim.plan.rooms[index].name.toUpperCase(), at.x, at.y - 13, {
+        size: 11,
+        weight: "600",
+        color: MUTED,
+        ax: 0.5,
+        ay: 1,
+        spacing: 1,
+      });
+      this.reading = ctx.label("", at.x, at.y, {
+        size: 20,
+        weight: "700",
+        ax: 0.5,
+        ay: 0.5,
+      });
+    }
+
     // Hover highlight for a radiator layer.
     this.layerBox
       .rect(-2, -1, rad.w + 4, lh + 2)
@@ -215,9 +238,11 @@ export class RoomView implements View {
     this.trvLabel.visible = onTrv;
     this.lsLabel.visible = this.mine(h) && h?.kind === "lockshield";
 
-    if (f.refreshText)
+    if (f.refreshText) {
       this.trvNumber.text =
         TRV_SETTINGS[sim.params.radiators[k].trvIndex].label;
+      if (this.reading) this.reading.text = `${room.T.toFixed(1)} °C`;
+    }
   }
 
   hitTest(p: Pt, pass: HitPass): Hit | null {

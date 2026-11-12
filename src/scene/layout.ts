@@ -49,6 +49,11 @@ export interface RoomLayout {
   lsBody: Rect;
   lockshield: Rect; // lockshield cap and body, for hover
   plugClosedY: number; // valve plugs sit here when shut
+  /**
+   * Centre of the room's temperature reading. Rooms without the thermostat
+   * show their temperature here, level with the thermostat's reading.
+   */
+  reading: Pt;
   /** Where the magnified TRV cut-away card goes. */
   cut: Rect;
   /** Where this radiator's TRV tail leaves the flow main... */
@@ -144,6 +149,10 @@ const VALVE_DX = 23; // valve centre lines, out from the radiator's ends
 const BODY_UP = 20; // valve body extends this far above the tail line...
 const BODY_DOWN = 13; // ...and this far below it
 const THERMOSTAT_DX = 64;
+const THERMOSTAT_Y = 236;
+const THERMOSTAT_W = 90;
+const THERMOSTAT_H = 70;
+const READ_DY = 21; // thermostat's big reading, below its top edge
 const CUT_DX = 36;
 const ROOF_ARROW_DX = 170;
 
@@ -212,6 +221,10 @@ function roomLayout(
     lsBody: body(lockX),
     lockshield: { x: lockX - 13, y: tailY - 36, w: 26, h: 49 },
     plugClosedY: tailY + 1,
+    reading: {
+      x: x + THERMOSTAT_DX + THERMOSTAT_W / 2,
+      y: THERMOSTAT_Y + READ_DY,
+    },
     cut: { x: x + CUT_DX, y: 338, w: CUTAWAY_W, h: CUTAWAY_H },
     // The last radiator's tees sit on the bypass, just under the radiator;
     // the others branch straight off the mains under the floor.
@@ -290,9 +303,9 @@ export function computeLayout(plan: HousePlan): HouseLayout {
   const statRoom = rooms[plan.thermostatRoom];
   const thermostat = {
     x: statRoom.rect.x + THERMOSTAT_DX,
-    y: 236,
-    w: 90,
-    h: 70,
+    y: THERMOSTAT_Y,
+    w: THERMOSTAT_W,
+    h: THERMOSTAT_H,
   };
 
   return {
@@ -311,7 +324,7 @@ export function computeLayout(plan: HousePlan): HouseLayout {
     junctionY: JUNCTION_Y,
     rooms,
     thermostat,
-    thermoReadY: thermostat.y + 21,
+    thermoReadY: thermostat.y + READ_DY,
     bypass: {
       valve,
       box: { x: valve.x - 14, y: JUNCTION_Y - 24, w: 28, h: 32 },

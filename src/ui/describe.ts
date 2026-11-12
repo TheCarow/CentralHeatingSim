@@ -1,7 +1,7 @@
 /*
  * What the hover tooltip says about each part of the scene, from live sim state.
  */
-import type { Hit } from "../scene/HeatingScene";
+import { roomOf, type Hit } from "../scene/hit";
 import { K, TRV_SETTINGS, type Sim, type SimStatus } from "../sim/model";
 import type { CellInfo } from "../sim/circuit";
 import { toCss, waterColor } from "../scene/colors";
@@ -60,8 +60,8 @@ export function describe(hit: Hit, sim: Sim): TipContent {
   const lw = sim.lossWatts(); // W, whole house
   const dT = lw.total / c.total; // inside - outside, weighted over rooms
   const circuit = sim.circuit;
-  // Devices belong to radiator 0 until the scene draws more than one room.
-  const k = 0;
+  // Room (and radiator) the hovered device belongs to.
+  const k = roomOf(hit);
   const room = sim.rooms[k];
   const radiator = p.radiators[k];
 

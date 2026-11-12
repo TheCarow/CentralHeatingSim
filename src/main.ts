@@ -1,5 +1,6 @@
 import { Sim } from "./sim/model";
-import { HeatingScene, type Hit } from "./scene/HeatingScene";
+import { HeatingScene } from "./scene/HeatingScene";
+import type { Hit } from "./scene/hit";
 import { HistoryChart, clockLabel } from "./chart/HistoryChart";
 import { Tooltip } from "./ui/tooltip";
 import { describe } from "./ui/describe";
@@ -117,7 +118,7 @@ const DEFAULT_SPEED = 20;
       tooltip.hide();
       return;
     }
-    const key = `${hit.kind}:${hit.cell ?? ""}`;
+    const key = `${hit.kind}:${hit.cell ?? ""}:${hit.room ?? ""}`;
     if (key === hoverKey) {
       tooltip.move(x, y); // same element: no rebuild, just follow the pointer
       return;
@@ -125,8 +126,8 @@ const DEFAULT_SPEED = 20;
     hoverKey = key;
     tooltip.show(tipFor(hit), x, y);
   };
-  scene.onAdjust = (kind, dir, source) => {
-    controls.adjust(kind, dir, source);
+  scene.onAdjust = (hit, dir, source) => {
+    controls.adjust(hit, dir, source);
     if (hover) tooltip.show(tipFor(hover), pointer.x, pointer.y);
   };
 

@@ -72,7 +72,12 @@ src/house/plan.ts         rooms, radiators and pipe runs (pure data)
 src/sim/circuit.ts        plan -> water cells, joins and conduction links
 src/sim/hydraulics.ts     how the pump flow divides between radiators and bypass
 src/sim/model.ts          physics, controls, steady-state estimates
-src/scene/HeatingScene.ts PixiJS cut-away scene, hover hit-testing
+src/scene/layout.ts       plan -> where everything sits in the drawing
+src/scene/HeatingScene.ts PixiJS host: scaling, pointer input, drives the views
+src/scene/views/          one view per part: fabric & weather, pipe network,
+                          each room (radiator, TRV, lockshield), boiler,
+                          thermostat, heat-loss arrows
+src/scene/hit.ts          what the pointer is over (with the room it belongs to)
 src/scene/TrvCutaway.ts   magnified TRV valve (currently hidden)
 src/chart/HistoryChart.ts PixiJS 6-hour history chart
 src/ui/                   controls, tooltip text

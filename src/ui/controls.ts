@@ -10,7 +10,7 @@ import {
 } from "../sim/model";
 import { SERIES, clockLabel } from "../chart/HistoryChart";
 import { waterGradientCss } from "../scene/colors";
-import type { HitKind } from "../scene/HeatingScene";
+import { roomOf, type Hit } from "../scene/hit";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) =>
   document.getElementById(id) as T;
@@ -152,9 +152,10 @@ export class Controls {
   }
 
   /** Nudge a setting from the scene (click / scroll on a device). */
-  adjust(kind: HitKind, dir: 1 | -1, source: "click" | "wheel"): void {
+  adjust(hit: Hit, dir: 1 | -1, source: "click" | "wheel"): void {
     const p = this.sim.params;
-    const rad = p.radiators[0]; // the scene shows one radiator for now
+    const kind = hit.kind;
+    const rad = p.radiators[roomOf(hit)];
     if (kind === "trv" || kind === "trv-inset")
       rad.trvIndex = clamp(rad.trvIndex + dir, 0, TRV_SETTINGS.length - 1);
     else if (kind === "thermostat") {

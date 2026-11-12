@@ -42,7 +42,7 @@ function probe(sim: Sim): Probe {
     burnerW: sim.burnerW,
     pump: sim.flowLpm,
     rad: sim.radFlowLpm(0),
-    bypass: sim.bypassLpm(0),
+    bypass: sim.bypassLpm,
     trv: r.trvOpening,
     demand: sim.demand,
     status: sim.status,

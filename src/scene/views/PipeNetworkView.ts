@@ -74,7 +74,7 @@ export class PipeNetworkView implements View {
     const { sim, lay, layers } = ctx;
     const c = sim.circuit;
     const path = (e: Edge) => pathFor(lay, e.role, e.n);
-    this.pxPerM = lay.pipes.flow.length / c.flow.lenM;
+    this.pxPerM = lay.pipes.flow[0].length / c.flowMain[0].lenM;
 
     // Split each pipe's drawn path into one piece per model cell.
     for (const e of c.edges) {
@@ -195,6 +195,7 @@ export class PipeNetworkView implements View {
   /** Moving dots show where water is flowing; each branch has its own rate. */
   private buildDots(): void {
     const { sim, lay, layers } = this.ctx;
+    const c = sim.circuit;
     const P = lay.pipes;
     const n = lay.rooms.length;
     const group = (
@@ -215,39 +216,45 @@ export class PipeNetworkView implements View {
     };
 
     // Circuit distance along the main line: the flow pipe from the boiler,
-    // then for each radiator its bypass and the link on to the next, then
-    // the return back to the boiler. All of it carries the pump's flow.
-    const uA: number[] = []; // at each radiator's first tee
-    const uB: number[] = []; // at its second tee
-    let u = P.flow.length;
-    const mainPaths: { path: Polyline; u: number }[] = [{ path: P.flow, u: 0 }];
+    // the bypass, then the return pipe back to the boiler.
+    const uFlow: number[] = [];
+    const uRet: number[] = [];
+    let u = 0;
     for (let k = 0; k < n; k++) {
-      uA[k] = u;
-      u += P.bypass[k].length;
-      uB[k] = u;
-      if (k < n - 1) {
-        mainPaths.push({ path: P.links[k], u });
-        u += P.links[k].length;
-      }
+      uFlow[k] = u;
+      u += P.flow[k].length;
     }
+    const uBypass = u;
+    u += P.bypass.length;
     for (let k = n - 1; k >= 0; k--) {
-      mainPaths.push({ path: P.ret[k], u });
+      uRet[k] = u;
       u += P.ret[k].length;
     }
-    const main = group(mainPaths, () => sim.flowLpm, null);
+
+    let main: DotGroup | null = null;
     for (let k = 0; k < n; k++) {
-      // The radiator's tails: the TRV tail starts at the first tee; the
-      // lockshield tail is placed so it lines up with the second.
+      // A stretch of flow pipe and the return under it carry the same flow.
+      const cell = c.flowMain[k].first;
+      main = group(
+        [
+          { path: P.flow[k], u: uFlow[k] },
+          { path: P.ret[k], u: uRet[k] },
+        ],
+        () => sim.cellFlowLpm(cell),
+        main,
+      );
+      // A radiator's tails: the TRV tail leaves the flow pipe where this
+      // stretch ends; the lockshield tail lines up with the return it joins.
       group(
         [
-          { path: P.trvTail[k], u: uA[k] },
-          { path: P.lsTail[k], u: uB[k] - P.lsTail[k].length },
+          { path: P.trvTail[k], u: uFlow[k] + P.flow[k].length },
+          { path: P.lsTail[k], u: uRet[k] - P.lsTail[k].length },
         ],
         () => sim.radFlowLpm(k),
         main,
       );
-      group([{ path: P.bypass[k], u: uA[k] }], () => sim.bypassLpm(k), main);
     }
+    group([{ path: P.bypass, u: uBypass }], () => sim.bypassLpm, main);
   }
 
   /**

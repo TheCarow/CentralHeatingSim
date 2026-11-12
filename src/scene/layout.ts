@@ -56,9 +56,9 @@ export interface RoomLayout {
   reading: Pt;
   /** Where the magnified TRV cut-away card goes. */
   cut: Rect;
-  /** Tee under the radiator where the TRV tail and the bypass part... */
+  /** Tee in the flow pipe, under the floor, feeding the TRV tail... */
   teeFlow: Pt;
-  /** ...and where the lockshield tail and the bypass rejoin. */
+  /** ...and tee in the return pipe where the lockshield tail drops in. */
   teeReturn: Pt;
 }
 
@@ -91,23 +91,21 @@ export interface HouseLayout {
   /** Internal walls: cupboard | room 1, room 1 | room 2, ... */
   partitions: Rect[];
   boiler: BoilerLayout;
-  flowY: number; // flow pipe and links between radiators, under the floor
+  flowY: number; // flow pipe under the floor
   returnY: number; // return pipe under the floor
-  junctionY: number; // the tees and bypass pipe under each radiator
   rooms: RoomLayout[];
   thermostat: Rect;
   /** Centre of the thermostat's big reading (the outside reading lines up). */
   thermoReadY: number;
   losses: LossArrowLayout;
   pipes: {
-    flow: Polyline;
-    links: Polyline[];
+    flow: Polyline[];
     ret: Polyline[];
     trvTail: Polyline[];
     lsTail: Polyline[];
-    bypass: Polyline[];
+    bypass: Polyline;
   };
-  /** Places where one pipe passes in front of another (none in a one-pipe loop). */
+  /** Each lockshield tail drops past the flow pipe in front of it. */
   crossings: Crossing[];
 }
 
@@ -126,7 +124,7 @@ const PARTITION_W = 16;
 const OUTSIDE_W = 200; // from the inner face of the gable wall to the edge
 const FLOW_Y = 588;
 const RETURN_Y = 612;
-const JUNCTION_Y = 546;
+const BYPASS_DX = 24; // the bypass turns down this far past the last lockshield
 
 // One room fills the original 1200-wide drawing. With more rooms they share
 // a slightly wider drawing, so each room is narrower.
@@ -221,9 +219,9 @@ function roomLayout(index: number, x: number, w: number): RoomLayout {
       y: THERMOSTAT_Y + READ_DY,
     },
     cut: { x: x + CUT_DX, y: 338, w: CUTAWAY_W, h: CUTAWAY_H },
-    // Both tees sit on the bypass pipe, just under the radiator.
-    teeFlow: { x: trvX, y: JUNCTION_Y },
-    teeReturn: { x: lockX, y: JUNCTION_Y },
+    // Both tees sit in the pipes under the floor.
+    teeFlow: { x: trvX, y: FLOW_Y },
+    teeReturn: { x: lockX, y: RETURN_Y },
   };
 }
 
@@ -244,27 +242,24 @@ export function computeLayout(plan: HousePlan): HouseLayout {
   const b = boiler();
 
   // ---- pipe runs, matching the circuit's edges ----
-  // Flow: down from the boiler, along under the floor, up to the first
-  // radiator's tees. Under each radiator the TRV tail and bypass part and
-  // rejoin; a link runs on to the next radiator; the return comes back
-  // along the bottom of the floor void, one stretch under each room.
-  const r0 = rooms[0];
-  const flow = new Polyline([
-    { x: b.flowX, y: b.bottom },
-    { x: b.flowX, y: FLOW_Y },
-    { x: r0.trvX, y: FLOW_Y },
-    r0.teeFlow,
-  ]);
-  const links: Polyline[] = [];
+  // Two pipes under the floor: the flow pipe runs from the boiler past every
+  // radiator, with a tee rising to each TRV; each lockshield tail drops
+  // through the floor (in front of the flow pipe) into the return pipe,
+  // which runs back to the boiler. Past the last radiator the flow pipe
+  // turns down into the return: the bypass.
+  const flow: Polyline[] = [];
+  const ret: Polyline[] = [];
   const trvTail: Polyline[] = [];
   const lsTail: Polyline[] = [];
-  const bypass: Polyline[] = [];
-  const ret: Polyline[] = [];
-  // Where a stretch of return hands over to the next: the middle of the
-  // internal wall at a room's left-hand side.
-  const roomStart = (k: number) => partitions[k].x + PARTITION_W / 2;
   for (let k = 0; k < n; k++) {
     const r = rooms[k];
+    flow.push(
+      new Polyline(
+        k === 0
+          ? [{ x: b.flowX, y: b.bottom }, { x: b.flowX, y: FLOW_Y }, r.teeFlow]
+          : [rooms[k - 1].teeFlow, r.teeFlow],
+      ),
+    );
     trvTail.push(
       new Polyline([
         r.teeFlow,
@@ -279,31 +274,26 @@ export function computeLayout(plan: HousePlan): HouseLayout {
         r.teeReturn,
       ]),
     );
-    bypass.push(new Polyline([r.teeFlow, r.teeReturn]));
-    if (k < n - 1) {
-      const next = rooms[k + 1];
-      links.push(
-        new Polyline([
-          r.teeReturn,
-          { x: r.lockX, y: FLOW_Y },
-          { x: next.trvX, y: FLOW_Y },
-          next.teeFlow,
-        ]),
-      );
-    }
-    const from: Pt[] =
-      k === n - 1
-        ? [r.teeReturn, { x: r.lockX, y: RETURN_Y }] // down from the last tee
-        : [{ x: roomStart(k + 1), y: RETURN_Y }];
-    const to: Pt[] =
-      k === 0
-        ? [
-            { x: b.returnX, y: RETURN_Y },
-            { x: b.returnX, y: b.bottom },
-          ]
-        : [{ x: roomStart(k), y: RETURN_Y }];
-    ret.push(new Polyline([...from, ...to]));
+    ret.push(
+      new Polyline(
+        k === 0
+          ? [
+              r.teeReturn,
+              { x: b.returnX, y: RETURN_Y },
+              { x: b.returnX, y: b.bottom },
+            ]
+          : [r.teeReturn, rooms[k - 1].teeReturn],
+      ),
+    );
   }
+  const last = rooms[n - 1];
+  const endX = last.lockX + BYPASS_DX;
+  const bypass = new Polyline([
+    last.teeFlow,
+    { x: endX, y: FLOW_Y },
+    { x: endX, y: RETURN_Y },
+    last.teeReturn,
+  ]);
 
   const statRoom = rooms[plan.thermostatRoom];
   const thermostat = {
@@ -326,7 +316,6 @@ export function computeLayout(plan: HousePlan): HouseLayout {
     boiler: b,
     flowY: FLOW_Y,
     returnY: RETURN_Y,
-    junctionY: JUNCTION_Y,
     rooms,
     thermostat,
     thermoReadY: thermostat.y + READ_DY,
@@ -338,13 +327,12 @@ export function computeLayout(plan: HousePlan): HouseLayout {
       roofTop: 6,
       roofBottom: 150,
     },
-    pipes: { flow, links, ret, trvTail, lsTail, bypass },
+    pipes: { flow, ret, trvTail, lsTail, bypass },
     crossings: findCrossings([
-      { role: "flow" as const, n: 0, path: flow },
-      ...links.map((path, k) => ({ role: "link" as const, n: k, path })),
+      ...flow.map((path, k) => ({ role: "flow" as const, n: k, path })),
       ...trvTail.map((path, k) => ({ role: "trvTail" as const, n: k, path })),
       ...lsTail.map((path, k) => ({ role: "lsTail" as const, n: k, path })),
-      ...bypass.map((path, k) => ({ role: "bypass" as const, n: k, path })),
+      { role: "bypass" as const, n: 0, path: bypass },
       ...ret.map((path, k) => ({ role: "ret" as const, n: k, path })),
     ]),
   };
@@ -388,9 +376,7 @@ export function pathFor(
 ): Polyline | null {
   switch (role) {
     case "flow":
-      return lay.pipes.flow;
-    case "link":
-      return lay.pipes.links[n];
+      return lay.pipes.flow[n];
     case "ret":
       return lay.pipes.ret[n];
     case "trvTail":
@@ -398,7 +384,7 @@ export function pathFor(
     case "lsTail":
       return lay.pipes.lsTail[n];
     case "bypass":
-      return lay.pipes.bypass[n];
+      return lay.pipes.bypass;
     case "hx":
     case "rad":
       return null;

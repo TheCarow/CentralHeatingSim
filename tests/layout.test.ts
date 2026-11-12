@@ -31,30 +31,30 @@ describe("one room keeps the original drawing", () => {
     expect(lay.losses.roofX).toBe(486);
   });
 
-  it("routes the pipes the same way", () => {
+  it("runs flow, return and bypass under the floor", () => {
     const pts = (p: { pts: Pt[] }) => p.pts.map((q) => [q.x, q.y]);
-    expect(pts(lay.pipes.flow)).toEqual([
+    expect(pts(lay.pipes.flow[0])).toEqual([
       [215, 360],
       [215, 588],
       [607, 588],
-      [607, 546],
     ]);
     expect(pts(lay.pipes.trvTail[0])).toEqual([
-      [607, 546],
+      [607, 588],
       [607, 504],
       [630, 504],
     ]);
     expect(pts(lay.pipes.lsTail[0])).toEqual([
       [850, 504],
       [873, 504],
-      [873, 546],
+      [873, 612],
     ]);
-    expect(pts(lay.pipes.bypass[0])).toEqual([
-      [607, 546],
-      [873, 546],
+    expect(pts(lay.pipes.bypass)).toEqual([
+      [607, 588],
+      [897, 588],
+      [897, 612],
+      [873, 612],
     ]);
     expect(pts(lay.pipes.ret[0])).toEqual([
-      [873, 546],
       [873, 612],
       [130, 612],
       [130, 360],
@@ -115,14 +115,28 @@ describe.each(Array.from({ length: MAX_ROOMS }, (_, i) => i + 1))(
       }
     });
 
-    it("puts a bypass pipe under every radiator, with no pipes crossing", () => {
-      expect(lay.pipes.bypass).toHaveLength(n);
-      lay.rooms.forEach((r, k) => {
-        expect(first(lay.pipes.bypass[k].pts)).toEqual(r.teeFlow);
-        expect(last(lay.pipes.bypass[k].pts)).toEqual(r.teeReturn);
+    it("keeps the tees and the bypass under the floor", () => {
+      const floor = lay.floorY + 10; // under the floorboards
+      for (const r of lay.rooms) {
+        expect(r.teeFlow.y).toBeGreaterThan(floor);
+        expect(r.teeReturn.y).toBeGreaterThan(floor);
+      }
+      for (const q of lay.pipes.bypass.pts) expect(q.y).toBeGreaterThan(floor);
+      // the bypass carries on from the last radiator's flow tee into its return tee
+      const end = lay.rooms[n - 1];
+      expect(first(lay.pipes.bypass.pts)).toEqual(end.teeFlow);
+      expect(last(lay.pipes.bypass.pts)).toEqual(end.teeReturn);
+    });
+
+    it("draws each lockshield drop in front of the flow pipe it crosses", () => {
+      expect(lay.crossings).toHaveLength(n);
+      lay.crossings.forEach((x, k) => {
+        expect(x.front).toEqual({ role: "lsTail", n: k });
+        expect(x.back).toEqual(
+          k < n - 1 ? { role: "flow", n: k + 1 } : { role: "bypass", n: 0 },
+        );
+        expect(x.at).toEqual({ x: lay.rooms[k].lockX, y: lay.flowY });
       });
-      expect(lay.pipes.links).toHaveLength(n - 1);
-      expect(lay.crossings).toHaveLength(0);
     });
 
     it("keeps the drawing a sensible width", () => {
@@ -140,7 +154,7 @@ describe.each(Array.from({ length: MAX_ROOMS }, (_, i) => i + 1))(
 
     it("connects pipes to the radiators and the boiler", () => {
       const b = lay.boiler;
-      expect(first(lay.pipes.flow.pts)).toEqual({
+      expect(first(lay.pipes.flow[0].pts)).toEqual({
         x: b.flowX,
         y: b.bottom,
       });

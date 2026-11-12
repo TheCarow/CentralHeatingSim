@@ -4,16 +4,18 @@
  * and the scene lays out its drawing from it.
  *
  * Rooms sit in a row, left to right, starting next to the boiler cupboard.
- * The pipework is a one-pipe loop: every radiator has an open bypass pipe
- * underneath it, and the water goes from one radiator's pipes to the next:
+ * The pipework is a two-pipe system under the floor:
  *
- *   boiler → flow ─┬─ radiator 1 ─┬─ link ─┬─ radiator 2 ─┬─ … ─┐
- *                  └── bypass 1 ──┘        └── bypass 2 ──┘     │
- *   boiler ← return ──────────────────────────────────────────────┘
+ *              radiator 1      radiator 2           radiator N
+ *              ┌───────┐       ┌───────┐            ┌───────┐
+ *   boiler → flow ─┴─────┼──────┴───────┼─── … ──────┴───────┼──┐ bypass
+ *   boiler ← return ─────┴──────────────┴─── … ──────────────┴──┘
  *
- * Each radiator branch is TRV tail → radiator → lockshield tail. There is no
- * bypass valve: at each radiator the water divides between the radiator and
- * its bypass pipe, so closing TRVs never stops the loop.
+ * At each radiator a tee in the flow pipe feeds its TRV tail; the flow pipe
+ * carries on under the radiator to the next one. The radiator's outlet
+ * (lockshield tail) drops straight into the return pipe. Past the last
+ * radiator the flow pipe turns down into the return: an open bypass with no
+ * valve, so water keeps moving even when every TRV is shut.
  */
 
 export interface RadiatorSpec {
@@ -23,9 +25,8 @@ export interface RadiatorSpec {
   waterL: number;
   steelKg: number;
   /**
-   * How freely water goes through the radiator (TRV and lockshield fully
-   * open), relative to its bypass pipe. 1 = the loop flow splits half and
-   * half.
+   * How freely water goes through the radiator with its TRV and lockshield
+   * fully open, relative to the other routes (the bypass is 1 by default).
    */
   conductance: number;
 }
@@ -53,17 +54,17 @@ export interface HousePlan {
   thermostatRoom: number;
   /** W/K through the internal wall between neighbouring rooms. */
   partitionUA: number;
-  /** Water the pump sends round the loop, L/min. */
+  /** Water the pump sends round, L/min. */
   pumpLpm: number;
-  /** Boiler → first radiator. */
-  flow: PipeSpec;
-  /** [k] radiator k → radiator k+1, under the floor. */
-  links: readonly PipeSpec[];
-  /** Back to the boiler: [k] runs under room k ([0] reaches the boiler). */
-  ret: readonly PipeSpec[];
-  /** Each radiator tail (TRV side and lockshield side). */
+  /** How freely water goes round the end bypass, relative to the radiators. */
+  bypassConductance: number;
+  /** [0] boiler → radiator 1's tee; [k] tee k-1 → tee k. */
+  flowMain: readonly PipeSpec[];
+  /** [0] radiator 1's tee → boiler; [k] tee k → tee k-1. */
+  returnMain: readonly PipeSpec[];
+  /** Each radiator tail (TRV side up from the flow, lockshield side down). */
   tail: PipeSpec;
-  /** The open bypass pipe under each radiator. */
+  /** The open bypass from the end of the flow pipe into the return. */
   bypass: PipeSpec;
 }
 
@@ -84,8 +85,9 @@ const ROOM_H = 2.5;
 const ROOM_C_PER_M2 = 62500; // J/K per m² of floor (1 MJ/K for a 4 x 4 m room)
 const PARTITION_U = 1.7; // W/(m²·K): plastered blockwork internal wall
 const CELLS_PER_M = 8; // 15 mm pipe split into 12.5 cm cells
-const PUMP_LPM = 4.0; // a fully open radiator takes half: 2 L/min
-const LINK_M = 2.0; // one radiator's return tee to the next one's flow tee
+// The pump is sized so that, with every TRV open, each radiator and the
+// bypass get this much.
+const ROUTE_LPM = 2.0;
 
 function room(index: number, count: number): RoomSpec {
   const end = index === count - 1;
@@ -106,22 +108,24 @@ function room(index: number, count: number): RoomSpec {
 export function makePlan(roomCount = 1): HousePlan {
   const n = Math.max(1, Math.min(MAX_ROOMS, Math.round(roomCount)));
   const rooms = Array.from({ length: n }, (_, i) => room(i, n));
-  const pipe = (lenM: number): PipeSpec => ({
-    lenM,
-    cells: lenM * CELLS_PER_M,
+  // Flow and return pipes between neighbouring radiators run a room's width.
+  const between = (): PipeSpec => ({
+    lenM: ROOM_W,
+    cells: ROOM_W * CELLS_PER_M,
   });
   return {
     rooms,
     thermostatRoom: 0,
     partitionUA: PARTITION_U * ROOM_D * ROOM_H,
-    pumpLpm: PUMP_LPM,
-    flow: { lenM: 7.5, cells: 60 }, // 15 mm copper, boiler -> under the first radiator
-    links: Array.from({ length: n - 1 }, () => pipe(LINK_M)),
-    // Return: from the first room back to the boiler the long way round
-    // (12 m); each further room adds a room's width.
-    ret: [
-      { lenM: 12.0, cells: 96 },
-      ...Array.from({ length: n - 1 }, () => pipe(ROOM_W)),
+    pumpLpm: ROUTE_LPM * (n + 1),
+    bypassConductance: 1,
+    flowMain: [
+      { lenM: 7.5, cells: 60 }, // 15 mm copper, boiler -> under the first radiator
+      ...Array.from({ length: n - 1 }, between),
+    ],
+    returnMain: [
+      { lenM: 12.0, cells: 96 }, // first radiator -> boiler, the longer way round
+      ...Array.from({ length: n - 1 }, between),
     ],
     tail: { lenM: 0.55, cells: 5 },
     bypass: { lenM: 3.0, cells: 24 },

@@ -24,8 +24,8 @@ describe.each(ROOM_COUNTS)("%i room(s)", (n) => {
     expect(sim.rooms).toHaveLength(n);
     expect(sim.params.radiators).toHaveLength(n);
     expect(sim.circuit.radiators).toHaveLength(n);
-    expect(sim.circuit.links).toHaveLength(n - 1);
-    expect(sim.circuit.ret).toHaveLength(n);
+    expect(sim.circuit.flowMain).toHaveLength(n);
+    expect(sim.circuit.returnMain).toHaveLength(n);
     // every cell belongs to exactly one edge, in order, with no gaps
     let next = 0;
     for (const e of sim.circuit.edges) {
@@ -46,14 +46,9 @@ describe.each(ROOM_COUNTS)("%i room(s)", (n) => {
       }
       sim.advance(30);
       expect(flowImbalance(sim.circuit, sim.m)).toBeLessThan(1e-12);
-      for (let k = 0; k < n; k++) {
-        // Some water always goes round each bypass; never more than the pump.
-        expect(sim.bypassLpm(k)).toBeGreaterThan(0);
-        expect(sim.radFlowLpm(k) + sim.bypassLpm(k)).toBeCloseTo(
-          sim.flowLpm,
-          12,
-        );
-      }
+      // Some water always goes round the bypass; it never takes more than the pump.
+      expect(sim.bypassLpm).toBeGreaterThan(0);
+      expect(sim.radiatorFlowLpm + sim.bypassLpm).toBeCloseTo(sim.flowLpm, 12);
     }
   });
 
@@ -107,26 +102,29 @@ describe("a row of three rooms", () => {
     expect(shut.radFlowLpm(1)).toBe(0);
   });
 
-  it("keeps the loop flowing round the bypasses with every TRV shut", () => {
+  it("keeps water moving round the bypass with every TRV shut", () => {
     const sim = new Sim(makePlan(3));
     sim.params.thermostatOn = true;
     sim.params.radiators.forEach((r) => (r.trvIndex = 0));
     sim.advance(60);
     expect(sim.status).toBe("bypass");
-    expect(sim.flowLpm).toBeCloseTo(4, 12); // one loop, 4 L/min
-    for (let k = 0; k < 3; k++)
-      expect(sim.bypassLpm(k)).toBeCloseTo(sim.flowLpm, 12);
+    expect(sim.flowLpm).toBeCloseTo(8, 12); // 2 L/min per radiator + bypass
+    expect(sim.bypassLpm).toBeCloseTo(sim.flowLpm, 12);
   });
 
-  it("splits the loop half and half at a fully open radiator", () => {
+  it("shares the pump flow between radiators and bypass by how open they are", () => {
     const sim = new Sim(makePlan(3));
     sim.params.thermostatOn = true;
     sim.params.thermostatSet = 30;
     sim.advance(120); // TRV sensors still cold: fully open
     for (let k = 0; k < 3; k++) expect(sim.radFlowLpm(k)).toBeCloseTo(2, 6);
-    // Each radiator gets cooler water than the one before it.
-    expect(sim.radInT(1)).toBeLessThan(sim.radInT(0));
-    expect(sim.radInT(2)).toBeLessThan(sim.radInT(1));
+    expect(sim.bypassLpm).toBeCloseTo(2, 6);
+    // Shut room 2's TRV: its share goes to the other radiators and the bypass.
+    sim.params.radiators[1].trvIndex = 0;
+    sim.advance(60);
+    expect(sim.radFlowLpm(1)).toBe(0);
+    for (const k of [0, 2]) expect(sim.radFlowLpm(k)).toBeCloseTo(8 / 3, 6);
+    expect(sim.bypassLpm).toBeCloseTo(8 / 3, 6);
   });
 });
 

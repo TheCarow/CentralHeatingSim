@@ -163,7 +163,7 @@ export class BoilerView implements View {
     const hx = waterColor(sim.T[c.hx]);
     this.hxG.tint = hx;
     this.intFlowG.tint = hx;
-    this.intRetG.tint = waterColor(sim.T[c.ret[0].last]);
+    this.intRetG.tint = waterColor(sim.T[c.returnMain[0].last]);
 
     if (sim.pumpOn && f.speed > 0) {
       let opening = 0;
@@ -204,7 +204,7 @@ export class BoilerView implements View {
       if (distToPolyline(p, bl.intFlow) <= 6)
         return { kind: "cell", cell: c.hx };
       if (distToPolyline(p, bl.intReturn) <= 6)
-        return { kind: "cell", cell: c.ret[0].last };
+        return { kind: "cell", cell: c.returnMain[0].last };
       if (SHOW_GAS_PIPE && distToPolyline(p, bl.gasPipe) <= 6)
         return { kind: "gas" };
     } else if (pass === "body") {

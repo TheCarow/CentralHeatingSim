@@ -44,10 +44,17 @@ function flowRow(sim: Sim, i: number): TipRow {
   return { label: "Water flow", value: `not moving (${why})` };
 }
 
+/** Distance along the flow pipe from the boiler to a cell's centre. */
+function fromBoilerM(sim: Sim, info: CellInfo): number {
+  let d = info.alongM;
+  for (let j = 0; j < info.edge.n; j++) d += sim.circuit.flowMain[j].lenM;
+  return d;
+}
+
 /** Distance still to go along the return to the boiler, from a cell's centre. */
 function toBoilerM(sim: Sim, info: CellInfo): number {
   let d = info.edge.lenM - info.alongM;
-  for (let j = 0; j < info.edge.n; j++) d += sim.circuit.ret[j].lenM;
+  for (let j = 0; j < info.edge.n; j++) d += sim.circuit.returnMain[j].lenM;
   return d;
 }
 
@@ -86,15 +93,27 @@ export function describe(hit: Hit, sim: Sim): TipContent {
             ],
             note: "The burner heats the water here. The boiler turns its flame up or down (modulates) to hold the flow set-point.",
           };
-        case "flow":
+        case "flow": {
+          const past = info.edge.n - 1; // radiator this stretch carries on past
           return {
-            title: "Flow pipe (from boiler)",
+            title:
+              past < 0
+                ? "Flow pipe (from boiler)"
+                : `Flow pipe, on past ${roomName(past)}`,
             ...base,
             rows: [
-              { label: "Distance from boiler", value: metres(info.alongM) },
+              {
+                label: "Distance from boiler",
+                value: metres(fromBoilerM(sim, info)),
+              },
               flowRow(sim, i),
             ],
+            note:
+              past < 0
+                ? undefined
+                : `Water ${roomName(past)}'s radiator doesn't take carries on along the flow pipe to the next radiator.`,
           };
+        }
         case "trvTail":
           return {
             title: `Through the TRV into the radiator${tag(r)}`,
@@ -133,35 +152,28 @@ export function describe(hit: Hit, sim: Sim): TipContent {
             rows: [flowRow(sim, i)],
           };
         case "bypass": {
-          const share = sim.flowLpm > 0.01 ? sim.bypassLpm(r) / sim.flowLpm : 0;
+          const share = sim.flowLpm > 0.01 ? sim.bypassLpm / sim.flowLpm : 0;
           return {
-            title: `Bypass pipe${tag(r)}`,
+            title: "Bypass (end of the flow pipe)",
             ...base,
             rows: [
               flowRow(sim, i),
               {
-                label: "Through the radiator",
-                value: `${sim.radFlowLpm(r).toFixed(2)} L/min`,
+                label: many ? "Through the radiators" : "Through the radiator",
+                value: `${sim.radiatorFlowLpm.toFixed(2)} L/min`,
               },
               {
                 label: "Share going round",
                 value: `${Math.round(share * 100)}%`,
               },
             ],
-            note: `An open pipe under the radiator. Water the radiator doesn't take goes round it and on, so closing ${many ? "TRVs" : "the TRV"} never stops the loop. Some always takes this short cut, even with the TRV fully open, so ${many ? "the radiators further on get cooler water and " : ""}the water returning to the boiler is hotter.`,
+            note: `An open pipe joining the end of the flow pipe to the return, with no valve, so water keeps moving even when ${many ? "every TRV is" : "the TRV is"} shut. Some always goes this way, so the water returning to the boiler is hotter and the boiler condenses less.`,
           };
         }
-        case "link":
-          return {
-            title: `On to the next radiator${tag(info.edge.n + 1)}`,
-            ...base,
-            rows: [flowRow(sim, i)],
-            note: "Water from the radiator and its bypass, mixed, goes on to the next radiator.",
-          };
         case "ret":
           return {
             title:
-              i === circuit.ret[0].last
+              i === circuit.returnMain[0].last
                 ? "Return into boiler"
                 : "Return pipe (to boiler)",
             ...base,

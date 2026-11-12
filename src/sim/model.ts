@@ -3,8 +3,7 @@
  *
  * The house plan (src/house/plan.ts) says which rooms and radiators there
  * are; circuit.ts turns it into a loop of water "cells" and hydraulics.ts
- * decides how the pump's flow divides between each radiator and the bypass
- * pipe under it.
+ * decides how the pump's flow divides between the radiators and the bypass.
  *
  * Each sub-step: water is advected cell to cell (upwind finite volume, with
  * mixing where branches rejoin), every cell exchanges heat with the room
@@ -13,7 +12,7 @@
  */
 import { makePlan, type HousePlan, type RoomSpec } from "../house/plan";
 import { CP, Circuit, HX, Kind, type CellInfo } from "./circuit";
-import { edgeFlows, radiatorShare } from "./hydraulics";
+import { edgeFlows, radiatorFlows } from "./hydraulics";
 
 export { CP };
 
@@ -194,6 +193,8 @@ export class Sim {
   private readonly dE: Float64Array; // per-cell energy change, scratch
   private readonly mcp: Float64Array; // m·cp per edge, scratch
   private readonly radFlow: Float64Array; // kg/s per radiator
+  private readonly openings: Float64Array; // TRV openings, scratch
+  private readonly lockshields: Float64Array; // lockshield settings, scratch
   private readonly roomTold: Float64Array; // room temps at step start
   private readonly radR: Float64Array; // W per room, scratch
   private readonly pipeR: Float64Array;
@@ -228,6 +229,8 @@ export class Sim {
     this.m = new Float64Array(c.edges.length);
     this.mcp = new Float64Array(c.edges.length);
     this.radFlow = new Float64Array(R);
+    this.openings = new Float64Array(R);
+    this.lockshields = new Float64Array(R);
     this.roomTold = new Float64Array(R);
     this.radR = new Float64Array(R);
     this.pipeR = new Float64Array(R);
@@ -359,9 +362,9 @@ export class Sim {
     for (let k = 0; k < this.radFlow.length; k++) s += this.radFlow[k];
     return s;
   }
-  /** Flow round the bypass pipe under radiator k, L/min. */
-  bypassLpm(k: number): number {
-    return this.m[this.circuit.radiators[k].bypass.id] * 60;
+  /** Flow round the bypass at the end of the flow pipe, L/min. */
+  get bypassLpm(): number {
+    return this.m[this.circuit.bypass.id] * 60;
   }
   get flowT(): number {
     return this.T[this.circuit.hx];
@@ -373,7 +376,7 @@ export class Sim {
     return this.T[this.circuit.radiators[k].rad.last];
   }
   get returnT(): number {
-    return this.T[this.circuit.ret[0].last];
+    return this.T[this.circuit.returnMain[0].last];
   }
   get efficiency(): number {
     return efficiency(this.returnT);
@@ -437,19 +440,20 @@ export class Sim {
     if (!p.boilerOn) this.overrun = 0;
     else if (this.demand) this.overrun = K.PUMP_OVERRUN_S;
     this.pumpOn = p.boilerOn && (this.demand || this.overrun > 0);
-    // One loop: all the pump's water passes every radiator. At each one it
-    // splits between the radiator (TRV and lockshield in series) and the
-    // open bypass pipe under it.
-    const specs = this.plan.rooms;
+    // The pump's flow divides between the radiators (TRV and lockshield in
+    // series) and the open bypass at the end of the flow pipe.
     this.mMain = this.pumpOn ? this.plan.pumpLpm / 60 : 0;
-    for (let k = 0; k < specs.length; k++)
-      this.radFlow[k] =
-        this.mMain *
-        radiatorShare(
-          specs[k].radiator.conductance,
-          this.rooms[k].trvOpening,
-          p.radiators[k].lockshield,
-        );
+    for (let k = 0; k < this.rooms.length; k++) {
+      this.openings[k] = this.rooms[k].trvOpening;
+      this.lockshields[k] = p.radiators[k].lockshield;
+    }
+    radiatorFlows(
+      this.plan,
+      this.mMain,
+      this.openings,
+      this.lockshields,
+      this.radFlow,
+    );
     edgeFlows(this.circuit, this.mMain, this.radFlow, this.m);
   }
 
@@ -462,7 +466,7 @@ export class Sim {
     const Tr = this.roomTold;
     for (let r = 0; r < rooms.length; r++) Tr[r] = rooms[r].T;
     for (let e = 0; e < m.length; e++) mcp[e] = m[e] * CP;
-    const retLast = c.ret[0].last;
+    const retLast = c.returnMain[0].last;
     Told.set(T);
 
     // Burner: modulates to hold the heat-exchanger outlet at the flow set-point.
@@ -564,22 +568,21 @@ export class Sim {
   /**
    * Heat (W) into room k's air with every room at `roomT`, the boiler
    * holding `flowT`, every TRV fully open and the pump running: one pass
-   * round the loop in cell order (each cell comes after the ones feeding
-   * it), mixing where the radiator and its bypass rejoin.
+   * round the circuit in cell order (each cell comes after the ones feeding
+   * it), mixing where branches rejoin.
    */
   private steadyHeat(k: number, flowT: number, roomT: number): number {
     const c = this.circuit;
+    const R = this.rooms.length;
     const pump = this.plan.pumpLpm / 60;
-    const rad = new Float64Array(this.rooms.length);
-    this.plan.rooms.forEach((s, j) => {
-      rad[j] =
-        pump *
-        radiatorShare(
-          s.radiator.conductance,
-          1,
-          this.params.radiators[j].lockshield,
-        );
-    });
+    const rad = new Float64Array(R);
+    radiatorFlows(
+      this.plan,
+      pump,
+      new Float64Array(R).fill(1),
+      this.params.radiators.map((r) => r.lockshield),
+      rad,
+    );
     const m = new Float64Array(c.edges.length);
     edgeFlows(c, pump, rad, m);
     const out = new Float64Array(c.N); // water temperature leaving each cell

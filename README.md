@@ -50,17 +50,20 @@ The history chart and table are hidden for now (`hidden` on `#history` in
 - The water circuit is split into small cells. Water moves cell to cell
   (upwind finite volume), and each cell loses heat to the room.
 - **House plan** (`src/house/plan.ts`): rooms in a row, each with one
-  radiator. The pipework is a one-pipe loop: every radiator has an open
-  bypass pipe underneath it (no bypass valve), and the water goes from one
-  radiator's pipes on to the next, then back to the boiler along the bottom
-  of the floor void.
-- **Pump and valves:** the pump sends 4 L/min round the loop. At each
-  radiator the water splits between the radiator (TRV and lockshield in
-  series) and its bypass, in proportion to how freely each lets water
-  through: half and half with both valves fully open, more round the bypass
-  as the TRV closes. The loop never stops, but some water always skips each
-  radiator, so the radiators further along get cooler water and the return
-  to the boiler is hotter (less condensing).
+  radiator, on a two-pipe system under the floor. The flow pipe runs from
+  the boiler past every radiator; a tee under each feeds its TRV, and the
+  flow pipe carries on under the radiator to the next one. Each radiator's
+  outlet (lockshield side) drops straight into the return pipe. Past the
+  last radiator the flow pipe turns down into the return: an open bypass,
+  with no valve.
+- **Pump and valves:** the pump is sized for 2 L/min through each radiator
+  and 2 L/min round the bypass. The flow divides between those parallel
+  routes in proportion to how freely each lets water through; a radiator's
+  route is scaled by its TRV opening and lockshield (in series). As a TRV
+  closes, its share moves to the other radiators and the bypass, so water
+  always circulates, even with every TRV shut. Because some water always
+  goes round the bypass, the return to the boiler is hotter (less
+  condensing).
 - **Radiator:** 1600 W at ΔT50, output ∝ ΔT^1.3, modelled as 12 layers from
   top to bottom.
 - **TRV:** a proportional valve driven by a slow wax sensor. It is fully open
@@ -84,15 +87,16 @@ with its neighbours.
 
 One room fills a 1200 × 700 drawing. With two or three rooms they share a
 drawing about 1500 wide, so each room is narrower, and the canvas takes the
-drawing's shape. No pipes cross in the one-pipe loop; if a future layout
-makes one pass over another, the pipe view draws the vertical one in front.
+drawing's shape. Each radiator's lockshield pipe drops through the flow pipe
+on its way to the return; it is drawn passing in front, so the two pipes
+don't look joined.
 
 ## Layout
 
 ```
 src/house/plan.ts         rooms, radiators and pipe runs (pure data)
 src/sim/circuit.ts        plan -> water cells, joins and conduction links
-src/sim/hydraulics.ts     how the loop flow splits between each radiator and its bypass
+src/sim/hydraulics.ts     how the pump flow divides between the radiators and the bypass
 src/sim/model.ts          physics, controls, steady-state estimates
 src/scene/layout.ts       plan -> where everything sits in the drawing
 src/scene/HeatingScene.ts PixiJS host: scaling, pointer input, drives the views

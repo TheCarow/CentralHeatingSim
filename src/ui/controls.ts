@@ -1,6 +1,5 @@
 /*
- * The compact control strip under the diagram, the one-line status, and the
- * history legend / table.
+ * The control strip under the diagram, and the history legend / table.
  */
 import {
   INSULATION,
@@ -95,7 +94,7 @@ export class Controls {
       this.sync();
     });
     this.ls.addEventListener("input", () => {
-      p.lockshield = Number(this.ls.value) / 100;
+      p.radiators[0].lockshield = Number(this.ls.value) / 100;
       this.sync();
     });
     this.power.addEventListener("click", () => {
@@ -113,7 +112,7 @@ export class Controls {
             : `${s.label === "❄" ? "Frost" : s.label}: about ${s.target} °C`,
       })),
       (i) => {
-        p.trvIndex = i;
+        p.radiators[0].trvIndex = i;
         this.sync();
       },
     );
@@ -155,8 +154,9 @@ export class Controls {
   /** Nudge a setting from the scene (click / scroll on a device). */
   adjust(kind: HitKind, dir: 1 | -1, source: "click" | "wheel"): void {
     const p = this.sim.params;
+    const rad = p.radiators[0]; // the scene shows one radiator for now
     if (kind === "trv" || kind === "trv-inset")
-      p.trvIndex = clamp(p.trvIndex + dir, 0, TRV_SETTINGS.length - 1);
+      rad.trvIndex = clamp(rad.trvIndex + dir, 0, TRV_SETTINGS.length - 1);
     else if (kind === "thermostat") {
       // Click switches the thermostat on/off; scrolling changes the set-point.
       if (source === "click") p.thermostatOn = !p.thermostatOn;
@@ -164,8 +164,8 @@ export class Controls {
     } else if (kind === "display" || kind === "boiler")
       p.flowSet = clamp(p.flowSet + dir * (source === "click" ? 5 : 1), 30, 80);
     else if (kind === "lockshield")
-      p.lockshield =
-        Math.round(clamp(p.lockshield + dir * 0.1, 0.1, 1) * 10) / 10;
+      rad.lockshield =
+        Math.round(clamp(rad.lockshield + dir * 0.1, 0.1, 1) * 10) / 10;
     else if (kind === "power") {
       if (source === "click") p.boilerOn = !p.boilerOn;
     } else if (kind === "outside")
@@ -182,13 +182,14 @@ export class Controls {
     $("o-flow").textContent = `${p.flowSet} °C`;
     $("o-stat").textContent = p.thermostatOn ? fmtT(p.thermostatSet) : "Off";
     $("o-out").textContent = `${p.outdoor} °C`;
-    this.ls.value = String(Math.round(p.lockshield * 100));
-    $("o-ls").textContent = `${Math.round(p.lockshield * 100)}%`;
+    const rad = p.radiators[0];
+    this.ls.value = String(Math.round(rad.lockshield * 100));
+    $("o-ls").textContent = `${Math.round(rad.lockshield * 100)}%`;
     $("o-power").textContent = p.boilerOn ? "On" : "Off";
     this.power.setAttribute("aria-checked", String(p.boilerOn));
-    const trv = TRV_SETTINGS[p.trvIndex];
+    const trv = TRV_SETTINGS[rad.trvIndex];
     $("o-trv").textContent = trv.target == null ? "shut" : `≈${trv.target} °C`;
-    markChecked(this.trvButtons, p.trvIndex);
+    markChecked(this.trvButtons, rad.trvIndex);
     markChecked(this.insButtons, INS_KEYS.indexOf(p.insulation));
   }
 
@@ -229,10 +230,10 @@ export class Controls {
       const tr = document.createElement("tr");
       const cells = [
         clockLabel(s.t),
-        s.room.toFixed(1),
+        s.rooms[0].T.toFixed(1),
         s.outdoor.toFixed(0),
         s.thermostat.toFixed(1),
-        s.trv == null ? "shut" : String(s.trv),
+        s.rooms[0].trv == null ? "shut" : String(s.rooms[0].trv),
         s.flow.toFixed(1),
         s.ret.toFixed(1),
         s.demand ? `${(s.burner / 1000).toFixed(2)} kW` : "off",

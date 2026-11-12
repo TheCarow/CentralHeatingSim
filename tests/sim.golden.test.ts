@@ -27,21 +27,21 @@ type Probe = Record<string, number | string | boolean | number[] | null>;
 
 /** Everything observable about the sim that should survive a refactor. */
 function probe(sim: Sim): Probe {
-  const r = { T: sim.Troom, Tsensor: sim.Tsensor, trvOpening: sim.trvOpening };
+  const r = sim.rooms[0];
   return {
     t: sim.time,
     room: r.T,
     sensor: r.Tsensor,
     flowT: sim.flowT,
     returnT: sim.returnT,
-    radInT: sim.radInT,
-    radOutT: sim.radOutT,
+    radInT: sim.radInT(0),
+    radOutT: sim.radOutT(0),
     radW: sim.radW,
     pipeW: sim.pipeW,
     lossW: sim.lossW,
     burnerW: sim.burnerW,
     pump: sim.flowLpm,
-    rad: sim.radFlowLpm,
+    rad: sim.radFlowLpm(0),
     bypass: sim.bypassLpm,
     trv: r.trvOpening,
     demand: sim.demand,
@@ -53,10 +53,10 @@ function probe(sim: Sim): Probe {
 
 /** Slower to compute: taken once an hour. */
 function deepProbe(sim: Sim): Probe {
-  const exp = sim.expectedRoomTemp();
+  const exp = sim.expectedRoomTemp(0);
   return {
     T: Array.from(sim.T),
-    cap: sim.maxAchievableRoomTemp(),
+    cap: sim.maxAchievableRoomTemp(0),
     expected: exp.t,
     limiter: exp.by,
   };
@@ -88,8 +88,8 @@ const SCENARIOS: Scenario[] = [
       sim.reset(p.outdoor);
       p.thermostatOn = true;
       p.thermostatSet = 24;
-      p.trvIndex = 3; // "2" ≈ 16 °C
-      p.lockshield = 0.4;
+      p.radiators[0].trvIndex = 3; // "2" ≈ 16 °C
+      p.radiators[0].lockshield = 0.4;
       p.insulation = "poor";
       p.flowSet = 55;
     },
@@ -101,7 +101,7 @@ const SCENARIOS: Scenario[] = [
       const p = sim.params;
       p.thermostatOn = true;
       p.thermostatSet = 22;
-      p.trvIndex = 3; // "2" ≈ 16 °C
+      p.radiators[0].trvIndex = 3; // "2" ≈ 16 °C
       p.insulation = "good";
       p.flowSet = 70;
     },
@@ -111,9 +111,9 @@ const SCENARIOS: Scenario[] = [
     hours: 1.5,
     setup: (sim) => {
       sim.params.thermostatOn = true;
-      sim.params.trvIndex = 0;
+      sim.params.radiators[0].trvIndex = 0;
     },
-    events: [[3600, (sim) => (sim.params.trvIndex = 4)]],
+    events: [[3600, (sim) => (sim.params.radiators[0].trvIndex = 4)]],
   },
   {
     name: "warm start, boiler off then on, pump overrun",

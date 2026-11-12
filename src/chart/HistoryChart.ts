@@ -105,13 +105,13 @@ export function clockLabel(t: number): string {
 function value(s: HistorySample, key: SeriesKey): number | null {
   switch (key) {
     case "room":
-      return s.room;
+      return s.rooms[0].T;
     case "outdoor":
       return s.outdoor;
     case "thermostat":
       return s.thermostat;
     case "trv":
-      return s.trv;
+      return s.rooms[0].trv;
     case "flow":
       return s.flow;
     case "ret":

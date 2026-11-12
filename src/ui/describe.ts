@@ -2,7 +2,8 @@
  * What the hover tooltip says about each part of the scene, from live sim state.
  */
 import type { Hit } from "../scene/HeatingScene";
-import { K, TRV_SETTINGS, lossCoefficients, type Sim } from "../sim/model";
+import { K, TRV_SETTINGS, type Sim, type SimStatus } from "../sim/model";
+import type { CellInfo } from "../sim/circuit";
 import { toCss, waterColor } from "../scene/colors";
 
 export interface TipRow {
@@ -23,34 +24,55 @@ export interface TipContent {
 const t1 = (t: number) => `${t.toFixed(1)} °C`;
 const watts = (w: number) =>
   Math.abs(w) >= 1000 ? `${(w / 1000).toFixed(2)} kW` : `${Math.round(w)} W`;
+const metres = (m: number) => `${m.toFixed(1)} m`;
+
+const STATUS_TEXT: Record<SimStatus, string> = {
+  standby: "standby",
+  overrun: "pump overrun",
+  bypass: "radiator valves shut, water going round the bypass",
+  heating: "heating",
+  idle: "at temperature",
+  off: "switched off",
+};
 
 /** Flow through the branch that cell i sits in, with the reason if it's still. */
 function flowRow(sim: Sim, i: number): TipRow {
   const lpm = sim.cellFlowLpm(i);
   if (lpm > 0.01)
     return { label: "Water flow", value: `${lpm.toFixed(2)} L/min` };
-  const seg = sim.segment(i);
   let why = "pump off";
-  if (sim.pumpOn) why = seg === "bypass" ? "TRV fully open" : "TRV shut";
+  if (sim.pumpOn)
+    why = sim.cellInfo(i).role === "bypass" ? "TRV fully open" : "TRV shut";
   return { label: "Water flow", value: `not moving (${why})` };
 }
 
-const metres = (k: number, cells: number, len: number) =>
-  `${(((k + 0.5) / cells) * len).toFixed(1)} m`;
+/** Distance along the flow main from the boiler to the centre of a cell. */
+function fromBoilerM(sim: Sim, info: CellInfo): number {
+  let d = info.alongM;
+  for (let j = 0; j < info.edge.n; j++) d += sim.circuit.flowMain[j].lenM;
+  return d;
+}
 
 export function describe(hit: Hit, sim: Sim): TipContent {
   const p = sim.params;
   const ins = sim.insulation;
-  const c = lossCoefficients(ins);
-  const dT = sim.Troom - p.outdoor;
-  const { idx } = sim;
+  const c = sim.losses; // W/K, whole house
+  const lw = sim.lossWatts(); // W, whole house
+  const dT = lw.total / c.total; // inside - outside, weighted over rooms
+  const circuit = sim.circuit;
+  // Devices belong to radiator 0 until the scene draws more than one room.
+  const k = 0;
+  const room = sim.rooms[k];
+  const radiator = p.radiators[k];
 
   switch (hit.kind) {
     case "cell": {
-      const i = hit.cell ?? 0;
+      const i = hit.cell ?? circuit.hx;
       const T = sim.T[i];
+      const info = sim.cellInfo(i);
+      const r = info.radiator >= 0 ? info.radiator : k;
       const base = { value: t1(T), swatch: toCss(waterColor(T)) };
-      switch (sim.segment(i)) {
+      switch (info.role) {
         case "hx":
           return {
             title: "Boiler heat exchanger",
@@ -69,7 +91,7 @@ export function describe(hit: Hit, sim: Sim): TipContent {
             rows: [
               {
                 label: "Distance from boiler",
-                value: metres(i - idx.flow.first, K.FLOW_CELLS, K.FLOW_LEN_M),
+                value: metres(fromBoilerM(sim, info)),
               },
               flowRow(sim, i),
             ],
@@ -82,7 +104,7 @@ export function describe(hit: Hit, sim: Sim): TipContent {
               flowRow(sim, i),
               {
                 label: "TRV",
-                value: `${Math.round(sim.trvOpening * 100)}% open`,
+                value: `${Math.round(sim.rooms[r].trvOpening * 100)}% open`,
               },
             ],
           };
@@ -93,13 +115,13 @@ export function describe(hit: Hit, sim: Sim): TipContent {
             rows: [
               {
                 label: "Layer",
-                value: `${i - idx.rad.first + 1} of ${K.RAD_LAYERS} (1 = top)`,
+                value: `${info.index + 1} of ${info.edge.cells} (1 = top)`,
               },
               { label: "Heat from this layer", value: watts(sim.q[i]) },
-              { label: "Whole radiator", value: watts(sim.radW) },
+              { label: "Whole radiator", value: watts(sim.rooms[r].radW) },
               {
                 label: "Top → bottom",
-                value: `${sim.radInT.toFixed(1)} → ${sim.radOutT.toFixed(1)} °C`,
+                value: `${sim.radInT(r).toFixed(1)} → ${sim.radOutT(r).toFixed(1)} °C`,
               },
               flowRow(sim, i),
             ],
@@ -127,18 +149,17 @@ export function describe(hit: Hit, sim: Sim): TipContent {
         case "ret":
           return {
             title:
-              i === idx.ret.last
+              i === circuit.returnMain[0].last
                 ? "Return into boiler"
                 : "Return pipe (to boiler)",
             ...base,
             rows: [
               {
-                label: "Distance from radiator",
-                value: metres(
-                  i - idx.ret.first,
-                  K.RETURN_CELLS,
-                  K.RETURN_LEN_M,
-                ),
+                label:
+                  info.edge.n === 0
+                    ? "Distance from radiator"
+                    : `Distance from radiator ${info.edge.n + 1}`,
+                value: metres(info.alongM),
               },
               flowRow(sim, i),
               {
@@ -167,8 +188,9 @@ export function describe(hit: Hit, sim: Sim): TipContent {
             : `${share}% of flow`,
         rows: [
           {
-            label: "Through radiator",
-            value: `${sim.radFlowLpm.toFixed(2)} L/min`,
+            label:
+              sim.rooms.length > 1 ? "Through radiators" : "Through radiator",
+            value: `${sim.radiatorFlowLpm.toFixed(2)} L/min`,
           },
           {
             label: "Through bypass",
@@ -180,7 +202,7 @@ export function describe(hit: Hit, sim: Sim): TipContent {
     }
 
     case "trv": {
-      const trv = TRV_SETTINGS[p.trvIndex];
+      const trv = TRV_SETTINGS[radiator.trvIndex];
       return {
         title: "Thermostatic radiator valve",
         value: `Setting ${trv.label}`,
@@ -189,13 +211,13 @@ export function describe(hit: Hit, sim: Sim): TipContent {
             label: "Aims for",
             value: trv.target == null ? "shut (no heat)" : `≈ ${trv.target} °C`,
           },
-          { label: "Its sensor reads", value: t1(sim.Tsensor) },
+          { label: "Its sensor reads", value: t1(room.Tsensor) },
           {
             label: "Valve",
             value:
               trv.target == null
                 ? "shut"
-                : `${Math.round(sim.trvOpening * 100)}% open`,
+                : `${Math.round(room.trvOpening * 100)}% open`,
           },
         ],
         note: "It closes gradually as the air around it nears its target, so it controls only this radiator. Click (Shift+click) or scroll to turn it.",
@@ -203,13 +225,13 @@ export function describe(hit: Hit, sim: Sim): TipContent {
     }
 
     case "trv-inset": {
-      const trv = TRV_SETTINGS[p.trvIndex];
+      const trv = TRV_SETTINGS[radiator.trvIndex];
       return {
         title: "Inside the TRV",
         value:
           trv.target == null
             ? "Plug on seat (shut)"
-            : `Plug lifted ${(sim.trvOpening * 2).toFixed(1)} of 2 mm`,
+            : `Plug lifted ${(room.trvOpening * 2).toFixed(1)} of 2 mm`,
         rows: [
           {
             label: "Head setting",
@@ -218,8 +240,8 @@ export function describe(hit: Hit, sim: Sim): TipContent {
                 ? "0 (shut)"
                 : `${trv.label} ≈ ${trv.target} °C`,
           },
-          { label: "Wax capsule temp", value: t1(sim.Tsensor) },
-          flowRow(sim, idx.trvTail.first),
+          { label: "Wax capsule temp", value: t1(room.Tsensor) },
+          flowRow(sim, circuit.radiators[k].trvTail.first),
         ],
         note: "The wax capsule in the head expands as it warms. It pushes the pin down until the plug presses on the seat and stops the water. As the room cools the wax shrinks, and a spring lifts the plug again. A higher number sets the mechanism further back, so it takes more heat to close.",
       };
@@ -228,10 +250,10 @@ export function describe(hit: Hit, sim: Sim): TipContent {
     case "lockshield":
       return {
         title: "Lockshield valve",
-        value: `${Math.round(p.lockshield * 100)}% open`,
+        value: `${Math.round(radiator.lockshield * 100)}% open`,
         rows: [
           { label: "Purpose", value: "balancing" },
-          flowRow(sim, idx.lsTail.first),
+          flowRow(sim, circuit.radiators[k].lsTail.first),
         ],
         note: "Set by the installer to share flow fairly between radiators. Closing it caps the flow through this radiator; the rest goes round the bypass. Click (Shift+click) or scroll to change it.",
       };
@@ -239,7 +261,7 @@ export function describe(hit: Hit, sim: Sim): TipContent {
     case "thermostat":
       return {
         title: "Room thermostat",
-        value: t1(sim.Troom),
+        value: t1(sim.thermostatT),
         rows: [
           { label: "Heating", value: p.thermostatOn ? "on" : "switched off" },
           { label: "Set to", value: t1(p.thermostatSet) },
@@ -263,14 +285,6 @@ export function describe(hit: Hit, sim: Sim): TipContent {
     case "boiler":
     case "burner":
     case "gas": {
-      const statusText: Record<string, string> = {
-        standby: "standby",
-        overrun: "pump overrun",
-        noflow: "no flow, won't fire",
-        heating: "heating",
-        idle: "at temperature",
-        off: "switched off",
-      };
       const gasW = sim.burnerW > 0 ? sim.burnerW / sim.efficiency : 0;
       return {
         title:
@@ -281,7 +295,7 @@ export function describe(hit: Hit, sim: Sim): TipContent {
               : "Combi boiler",
         value: hit.kind === "gas" ? watts(gasW) : `${p.flowSet} °C flow`,
         rows: [
-          { label: "Status", value: statusText[sim.status] },
+          { label: "Status", value: STATUS_TEXT[sim.status] },
           { label: "Heat output", value: watts(sim.burnerW) },
           { label: "Gas input", value: watts(gasW) },
           {
@@ -308,7 +322,11 @@ export function describe(hit: Hit, sim: Sim): TipContent {
         rows: [
           {
             label: "Thermostat",
-            value: sim.demand ? "calling for heat" : "satisfied",
+            value: !p.thermostatOn
+              ? "switched off"
+              : sim.demand
+                ? "calling for heat"
+                : "satisfied",
           },
         ],
         note: "Click to switch the boiler on or off. When it's off, the thermostat can call for heat but nothing happens.",
@@ -319,7 +337,7 @@ export function describe(hit: Hit, sim: Sim): TipContent {
         title: "Circulating pump",
         value: sim.pumpOn ? "Running" : "Off",
         rows: [
-          flowRow(sim, idx.hx),
+          flowRow(sim, circuit.hx),
           {
             label: "Overrun left",
             value:
@@ -331,17 +349,20 @@ export function describe(hit: Hit, sim: Sim): TipContent {
         note: "Pushes water round the circuit while the thermostat calls for heat, then runs on briefly to cool the heat exchanger.",
       };
 
-    case "wall":
+    case "wall": {
+      let area = 0;
+      for (const r of sim.plan.rooms) area += r.extWallM2;
       return {
         title: "External wall",
         value: ins.wall.name,
         rows: [
           { label: "U-value", value: `${ins.wall.U} W/m²K` },
-          { label: "Area", value: `${K.ROOM.extWallArea} m²` },
-          { label: "Heat loss now", value: watts(c.wall * dT) },
+          { label: "Area", value: `${area} m²` },
+          { label: "Heat loss now", value: watts(lw.wall) },
         ],
         note: "U-value = watts lost per m² for each °C of difference inside to outside. Lower is better.",
       };
+    }
 
     case "loft":
       return {
@@ -349,7 +370,7 @@ export function describe(hit: Hit, sim: Sim): TipContent {
         value: `${ins.loft.mm} mm`,
         rows: [
           { label: "Ceiling U-value", value: `${ins.loft.U} W/m²K` },
-          { label: "Heat loss now", value: watts(c.roof * dT) },
+          { label: "Heat loss now", value: watts(lw.roof) },
         ],
       };
 
@@ -357,14 +378,22 @@ export function describe(hit: Hit, sim: Sim): TipContent {
     case "loss-roof":
     case "loss-vent": {
       const map = {
-        "loss-wall": { name: "Through the external wall", H: c.wall },
-        "loss-roof": { name: "Through the ceiling / roof", H: c.roof },
-        "loss-vent": { name: "Draughts & ventilation", H: c.vent },
+        "loss-wall": {
+          name: "Through the external wall",
+          H: c.wall,
+          W: lw.wall,
+        },
+        "loss-roof": {
+          name: "Through the ceiling / roof",
+          H: c.roof,
+          W: lw.roof,
+        },
+        "loss-vent": { name: "Draughts & ventilation", H: c.vent, W: lw.vent },
       } as const;
       const m = map[hit.kind];
       return {
         title: "Heat escaping",
-        value: watts(m.H * dT),
+        value: watts(m.W),
         rows: [
           { label: "Path", value: m.name },
           { label: "Rate", value: `${m.H.toFixed(1)} W per °C` },
@@ -396,19 +425,20 @@ export function describe(hit: Hit, sim: Sim): TipContent {
       };
 
     case "room": {
-      const exp = sim.expectedRoomTemp();
+      const exp = sim.expectedRoomTemp(k);
+      const rate = sim.roomRatePerHour(k);
       return {
         title: "Room air",
-        value: t1(sim.Troom),
+        value: t1(room.T),
         rows: [
           {
             label: "Heat in (radiator + pipes)",
-            value: watts(sim.radW + sim.pipeW),
+            value: watts(room.radW + room.pipeW),
           },
-          { label: "Heat out (fabric)", value: watts(sim.lossW) },
+          { label: "Heat out (fabric)", value: watts(room.lossW) },
           {
             label: "Trend",
-            value: `${sim.roomRatePerHour >= 0 ? "+" : ""}${sim.roomRatePerHour.toFixed(2)} °C/h`,
+            value: `${rate >= 0 ? "+" : ""}${rate.toFixed(2)} °C/h`,
           },
           { label: "Should settle near", value: t1(exp.t) },
         ],

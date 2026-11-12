@@ -15,14 +15,13 @@ import {
   type FederatedPointerEvent,
 } from "pixi.js";
 import {
-  K,
   TRV_SETTINGS,
   clamp,
-  lossCoefficients,
   type Sim,
   type SimStatus,
   type WallType,
 } from "../sim/model";
+import { PIPE, type RadiatorEdges } from "../sim/circuit";
 import { roomTint, skyTint, waterColor } from "./colors";
 import { CUTAWAY_H, CUTAWAY_W, TrvCutaway } from "./TrvCutaway";
 import {
@@ -144,7 +143,6 @@ const GAS_PIPE: Pt[] = [
   { x: GAS_X, y: BOILER_BOTTOM },
   { x: GAS_X, y: BOILER_BOTTOM + 38 },
 ];
-const PX_PER_M = FLOW_PATH.length / K.FLOW_LEN_M;
 const DOT_GAP = 16; // same spacing on every pipe
 
 export type HitKind =
@@ -245,6 +243,10 @@ export class HeatingScene {
   onAdjust?: (kind: HitKind, dir: 1 | -1, source: "click" | "wheel") => void;
 
   private readonly sim: Sim;
+  /** The scene draws one room for now: room 0 and its radiator. */
+  private readonly radEdges: RadiatorEdges;
+  private readonly radLayers: number;
+  private readonly pxPerM: number; // drawn pixels per metre of pipe
   private readonly world = new Container();
   private readonly L = {
     bg: new Container(),
@@ -316,13 +318,16 @@ export class HeatingScene {
   constructor(sim: Sim) {
     this.sim = sim;
     this.cellColor = new Int32Array(sim.N).fill(-1);
-    const { idx } = sim;
+    const c = sim.circuit;
+    this.radEdges = c.radiators[0];
+    this.radLayers = this.radEdges.rad.cells;
+    this.pxPerM = FLOW_PATH.length / c.flowMain[0].lenM;
     const segments: [Polyline, { first: number; last: number }][] = [
-      [FLOW_PATH, idx.flow],
-      [TRV_TAIL_PATH, idx.trvTail],
-      [LS_TAIL_PATH, idx.lsTail],
-      [BYPASS_PATH, idx.bypass],
-      [RETURN_PATH, idx.ret],
+      [FLOW_PATH, c.flowMain[0]],
+      [TRV_TAIL_PATH, this.radEdges.trvTail],
+      [LS_TAIL_PATH, this.radEdges.lsTail],
+      [BYPASS_PATH, c.bypass],
+      [RETURN_PATH, c.returnMain[0]],
     ];
     for (const [path, r] of segments)
       path
@@ -435,7 +440,7 @@ export class HeatingScene {
 
   hitTest(p: Pt): Hit | null {
     if (p.x < 0 || p.y < 0 || p.x > SCENE_W || p.y > SCENE_H) return null;
-    const { idx } = this.sim;
+    const c = this.sim.circuit;
     if (inRect(p, TRV_HEAD, 3)) return { kind: "trv" };
     if (inRect(p, TRV_BODY, 2)) return { kind: "trv-inset" };
     if (this.cutaway.alpha > 0.3 && inRect(p, CUT))
@@ -447,11 +452,11 @@ export class HeatingScene {
     if (inRect(p, DISPLAY)) return { kind: "display" };
     if (Math.hypot(p.x - PUMP.x, p.y - PUMP.y) <= PUMP.r + 2)
       return { kind: "pump" };
-    if (inRect(p, HX)) return { kind: "cell", cell: 0 };
+    if (inRect(p, HX)) return { kind: "cell", cell: c.hx };
     if (inRect(p, BURNER)) return { kind: "burner" };
-    if (distToPolyline(p, INT_FLOW) <= 6) return { kind: "cell", cell: 0 };
+    if (distToPolyline(p, INT_FLOW) <= 6) return { kind: "cell", cell: c.hx };
     if (distToPolyline(p, INT_RETURN) <= 6)
-      return { kind: "cell", cell: idx.ret.last };
+      return { kind: "cell", cell: c.returnMain[0].last };
     if (SHOW_GAS_PIPE && distToPolyline(p, GAS_PIPE) <= 6)
       return { kind: "gas" };
 
@@ -466,11 +471,11 @@ export class HeatingScene {
 
     if (inRect(p, RAD)) {
       const layer = clamp(
-        Math.floor(((p.y - RAD.y) / RAD.h) * K.RAD_LAYERS),
+        Math.floor(((p.y - RAD.y) / RAD.h) * this.radLayers),
         0,
-        K.RAD_LAYERS - 1,
+        this.radLayers - 1,
       );
-      return { kind: "cell", cell: idx.rad.first + layer };
+      return { kind: "cell", cell: this.radEdges.rad.first + layer };
     }
     if (inRect(p, BOILER)) return { kind: "boiler" };
     for (const a of this.arrows)
@@ -488,7 +493,7 @@ export class HeatingScene {
 
   private placeHighlight(): void {
     const h = this.hover;
-    const { idx } = this.sim;
+    const rad = this.radEdges.rad;
     this.ring.visible = false;
     this.layerBox.visible = false;
     if (!h || h.kind !== "cell" || h.cell == null) return;
@@ -499,10 +504,10 @@ export class HeatingScene {
       const b = pts[pts.length - 1];
       this.ring.position.set((a.x + b.x) / 2, (a.y + b.y) / 2);
       this.ring.visible = true;
-    } else if (i >= idx.rad.first && i <= idx.rad.last) {
+    } else if (i >= rad.first && i <= rad.last) {
       this.layerBox.position.set(
         RAD.x,
-        RAD.y + ((i - idx.rad.first) * RAD.h) / K.RAD_LAYERS,
+        RAD.y + ((i - rad.first) * RAD.h) / this.radLayers,
       );
       this.layerBox.visible = true;
     }
@@ -697,19 +702,20 @@ export class HeatingScene {
     // overlap in three colours and make a lumpy blob, so the cells touching a
     // junction get square ends instead: the pipe that feeds the junction fills
     // the junction square, and the branches start exactly at its edges.
-    const { idx } = sim;
+    const c = sim.circuit;
+    const r = this.radEdges;
     const half = 4; // half the water stroke width
     const A = { x: TRV_X, y: JUNCTION_Y };
     const B = { x: LOCK_X, y: JUNCTION_Y };
     const startAt = (p: Pt) => (pts: Pt[]) => [p, ...pts.slice(1)];
     const endAt = (p: Pt) => (pts: Pt[]) => [...pts.slice(0, -1), p];
     const junctionEnds = new Map<number, (pts: Pt[]) => Pt[]>([
-      [idx.flow.last, endAt({ x: A.x, y: A.y - half })], // feeds A
-      [idx.trvTail.first, startAt({ x: A.x, y: A.y - half })],
-      [idx.bypass.first, startAt({ x: A.x + half, y: A.y })],
-      [idx.bypass.last, endAt({ x: B.x - half, y: B.y })],
-      [idx.lsTail.last, endAt({ x: B.x, y: B.y - half })],
-      [idx.ret.first, startAt({ x: B.x, y: B.y - half })], // fills B
+      [c.flowMain[0].last, endAt({ x: A.x, y: A.y - half })], // feeds A
+      [r.trvTail.first, startAt({ x: A.x, y: A.y - half })],
+      [c.bypass.first, startAt({ x: A.x + half, y: A.y })],
+      [c.bypass.last, endAt({ x: B.x - half, y: B.y })],
+      [r.lsTail.last, endAt({ x: B.x, y: B.y - half })],
+      [c.returnMain[0].first, startAt({ x: B.x, y: B.y - half })], // fills B
     ]);
 
     for (const [i, pts] of this.pipeCells) {
@@ -758,7 +764,7 @@ export class HeatingScene {
         { path: TRV_TAIL_PATH, u: lf },
         { path: LS_TAIL_PATH, u: lf + lb - LS_TAIL_PATH.length },
       ],
-      () => sim.radFlowLpm,
+      () => sim.radFlowLpm(0),
     );
     group([{ path: BYPASS_PATH, u: lf }], () => sim.bypassLpm);
 
@@ -788,8 +794,7 @@ export class HeatingScene {
   }
 
   private buildRadiator(): void {
-    const { idx } = this.sim;
-    const R = K.RAD_LAYERS;
+    const R = this.radLayers;
     const lh = RAD.h / R;
     const grille = new Graphics()
       .roundRect(RAD.x + 3, RAD.y - 7, RAD.w - 6, 8, 2)
@@ -805,7 +810,7 @@ export class HeatingScene {
         .rect(RAD.x, RAD.y + i * lh, RAD.w, lh + 0.6)
         .fill(0xffffff);
       this.L.devices.addChild(g);
-      this.cellG[idx.rad.first + i] = g;
+      this.cellG[this.radEdges.rad.first + i] = g;
     }
     const over = new Graphics();
     for (let x = RAD.x + 9; x < RAD.x + RAD.w - 4; x += 10)
@@ -1106,7 +1111,7 @@ export class HeatingScene {
       .circle(0, 0, 9)
       .stroke({ width: 1.5, color: 0xffffff });
     this.layerBox
-      .rect(-2, -1, RAD.w + 4, RAD.h / K.RAD_LAYERS + 2)
+      .rect(-2, -1, RAD.w + 4, RAD.h / this.radLayers + 2)
       .stroke({ width: 2, color: 0xffffff });
     this.ring.visible = this.layerBox.visible = false;
     this.L.overlay.addChild(this.ring, this.layerBox);
@@ -1143,13 +1148,11 @@ export class HeatingScene {
   }
 
   private drawArrows(): void {
-    const sim = this.sim;
-    const c = lossCoefficients(sim.insulation);
-    const dT = sim.Troom - sim.params.outdoor;
+    const lw = this.sim.lossWatts();
     const watts: Record<string, number> = {
-      "loss-wall": c.wall * dT,
-      "loss-vent": c.vent * dT,
-      "loss-roof": c.roof * dT,
+      "loss-wall": lw.wall,
+      "loss-vent": lw.vent,
+      "loss-roof": lw.roof,
     };
     const x1 = WALL_X - 40;
     const x2 = Math.min(SCENE_W - 6, this.wallEnd + 66);
@@ -1231,23 +1234,27 @@ export class HeatingScene {
     this.clock += dt;
     if (p.insulation !== this.builtInsulation) this.rebuildFabric();
 
+    const c = sim.circuit;
+    const room = sim.rooms[0];
+    const radiator = p.radiators[0];
+
     // colours
-    this.roomWall.tint = roomTint(sim.Troom);
+    this.roomWall.tint = roomTint(room.T);
     const sky = skyTint(p.outdoor);
     this.sky.tint = sky;
     for (let i = 0; i < sim.N; i++) {
       const g = this.cellG[i];
       if (!g) continue;
-      const c = waterColor(sim.T[i]);
-      if (c !== this.cellColor[i]) {
-        this.cellColor[i] = c;
-        g.tint = c;
+      const col = waterColor(sim.T[i]);
+      if (col !== this.cellColor[i]) {
+        this.cellColor[i] = col;
+        g.tint = col;
       }
     }
-    const hx = waterColor(sim.T[0]);
+    const hx = waterColor(sim.T[c.hx]);
     this.hxG.tint = hx;
     this.intFlowG.tint = hx;
-    this.intRetG.tint = waterColor(sim.T[sim.idx.ret.last]);
+    this.intRetG.tint = waterColor(sim.T[c.returnMain[0].last]);
     this.led.tint = sim.demand ? 0xe34948 : 0xc9c4ba;
     this.thermoScreen.tint = p.thermostatOn ? 0xe9f0ec : 0xd0d3d1;
 
@@ -1256,7 +1263,7 @@ export class HeatingScene {
     // moves in proportion to the share of the flow it carries.
     const pump = sim.flowLpm;
     const pumpPx = Math.min(
-      (pump / 60 / K.PIPE_L_PER_M) * PX_PER_M * speed,
+      (pump / 60 / PIPE.L_PER_M) * this.pxPerM * speed,
       160,
     );
     const main = this.dotGroups[0];
@@ -1276,11 +1283,11 @@ export class HeatingScene {
     }
 
     // The plug in the real TRV body tracks the valve opening.
-    this.trvLift += (sim.trvOpening - this.trvLift) * Math.min(1, dt * 6);
+    this.trvLift += (room.trvOpening - this.trvLift) * Math.min(1, dt * 6);
     this.trvPlug.y = PLUG_CLOSED_Y - PLUG_TRAVEL * this.trvLift;
 
     if (sim.pumpOn && speed > 0)
-      this.impeller.rotation += dt * (3 + 12 * sim.trvOpening);
+      this.impeller.rotation += dt * (3 + 12 * room.trvOpening);
 
     const burning = sim.burnerW > 30;
     const intensity = 0.55 + 0.6 * Math.min(1, sim.burnerW / 2500);
@@ -1321,7 +1328,7 @@ export class HeatingScene {
     const h = this.hover;
     this.loftText.visible = h?.kind === "loft";
     this.lsLabel.visible = h?.kind === "lockshield";
-    this.lsPlug.y = PLUG_CLOSED_Y - PLUG_TRAVEL * sim.params.lockshield;
+    this.lsPlug.y = PLUG_CLOSED_Y - PLUG_TRAVEL * radiator.lockshield;
     this.trvLabel.visible = h?.kind === "trv" || h?.kind === "trv-inset";
     this.abvLabel.visible = h?.kind === "bypass-valve";
 
@@ -1350,8 +1357,8 @@ export class HeatingScene {
   private updateLabels(): void {
     const sim = this.sim;
     const p = sim.params;
-    const trv = TRV_SETTINGS[p.trvIndex];
-    this.thermoTemp.text = `${sim.Troom.toFixed(1)}°`;
+    const trv = TRV_SETTINGS[p.radiators[0].trvIndex];
+    this.thermoTemp.text = `${sim.thermostatT.toFixed(1)}°`;
     this.thermoSet.text = p.thermostatOn
       ? `Set ${p.thermostatSet.toFixed(1)}°`
       : "Heating off";

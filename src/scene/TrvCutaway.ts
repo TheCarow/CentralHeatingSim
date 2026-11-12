@@ -147,8 +147,13 @@ export class TrvCutaway extends Container {
     label("→ radiator", 109, 68, { size: 10, color: MUTED, parent: this });
   }
 
+  /** Which radiator's TRV this cut-away shows. */
+  radiator = 0;
+
   update(sim: Sim, dt: number, speed: number): void {
-    const target = sim.trvOpening * MAX_LIFT;
+    const k = this.radiator;
+    const opening = sim.rooms[k].trvOpening;
+    const target = opening * MAX_LIFT;
     if (!this.visible) {
       this.lift = target; // nothing to draw; be ready when shown
       return;
@@ -160,14 +165,14 @@ export class TrvCutaway extends Container {
     this.stem.position.set(CX, SEAT_Y - lift);
     const pinTop = SEAT_Y - lift - PLUG_H - 3 - PIN_LEN;
     this.bellows.scale.y = Math.max(0.2, (pinTop - BELLOWS_TOP) / BELLOWS_REF);
-    this.water.tint = waterColor(sim.radInT);
+    this.water.tint = waterColor(sim.radInT(k));
 
-    const trv = TRV_SETTINGS[sim.params.trvIndex];
+    const trv = TRV_SETTINGS[sim.params.radiators[k].trvIndex];
     this.state.text =
-      trv.target == null ? "shut" : `${Math.round(sim.trvOpening * 100)}% open`;
+      trv.target == null ? "shut" : `${Math.round(opening * 100)}% open`;
 
     // Water squeezing past the plug.
-    const flowing = sim.radFlowLpm > 0.01 && lift > 0.4;
+    const flowing = sim.radFlowLpm(k) > 0.01 && lift > 0.4;
     const gapMid = SEAT_Y - lift / 2;
     if (!this.path || Math.abs(lift - this.pathLift) > 0.05) {
       this.pathLift = lift;
@@ -180,7 +185,7 @@ export class TrvCutaway extends Container {
       ]);
     }
     const path = this.path;
-    if (flowing && speed > 0) this.offset += (10 + 45 * sim.trvOpening) * dt;
+    if (flowing && speed > 0) this.offset += (10 + 45 * opening) * dt;
     const gap = path.length / this.dots.length;
     this.dots.forEach((d, i) => {
       d.visible = flowing;

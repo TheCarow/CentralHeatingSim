@@ -103,7 +103,8 @@ export function seriesFor(rooms: number): SeriesDef[] {
 }
 
 const WINDOW_S = 6 * 3600;
-const FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+const FONT =
+  '"Nunito Variable", "Nunito", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 const M = { l: 38, r: 96, t: 22, b: 22, gap: 34 };
 
 type StyleKey = "axis" | "label" | "title";

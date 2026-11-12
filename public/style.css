@@ -1,19 +1,33 @@
+/*
+ * A friendly, game-menu look with a light touch of depth: soft light
+ * background, rounded "pill" buttons with a slight raised edge, a gentle
+ * blue fill for what's selected, rounded Nunito type, and small-caps
+ * section titles.
+ */
 :root {
   /* Light theme only, whatever the system setting. */
   color-scheme: light;
-  --page: #f6f4ef;
-  --surface-1: #fcfcfb;
-  --surface-2: #f0eee9;
-  --border: rgba(11, 11, 11, 0.1);
-  --text-primary: #0b0b0b;
-  --text-secondary: #52514e;
-  --text-muted: #898781;
-  --accent: #c2410c;
-  --accent-soft: rgba(194, 65, 12, 0.1);
-  --on-accent: #ffffff; /* symbols drawn on an accent fill */
+  --page-top: #ffffff;
+  --page-bottom: #e4ecf4;
+  --surface-1: #ffffff;
+  --surface-2: #eef3f8;
+  --surface-3: #f4f8fb;
+  --border: rgba(29, 53, 80, 0.12);
+  --text-primary: #1d3550; /* navy: 12.5:1 on white */
+  --text-secondary: #4a6280; /* 6.3:1 */
+  --text-muted: #5c718a; /* 5.0:1 */
+  --brand: #1573c2; /* slider progress, solid blue: white text 4.9:1 */
+  /* gentle two-tone fill for selected options and the Controls bar:
+     white text 4.4:1 at the top, 5.1:1 in the middle */
+  --brand-fill: linear-gradient(#1a7bcb, #1265b0);
+  --brand-ink: #0d5ea3; /* blue text: 6.7:1 on white */
+  --brand-soft: #e3f1fc;
+  --accent: var(--brand);
+  --on-accent: #ffffff;
+  --go-fill: linear-gradient(#36b05a, #1f9a44); /* the "on" switch */
   --warn-ink: #8a4b00;
-  --grid: #e1e0d9;
-  --baseline: #c3c2b7;
+  --grid: #e1e6ec;
+  --baseline: #c3ccd6;
   --wash: #e34948;
   /* chart series (validated CVD-safe per panel on this light surface; room
      lines in order room, room-2, room-3 alongside outdoor) */
@@ -23,11 +37,17 @@
   --series-outdoor: #1baf7a;
   --series-flow: #e34948;
   --series-return: #2a78d6;
-  --ref-strong: #0b0b0b;
-  --ref-muted: #898781;
+  --ref-strong: #1d3550;
+  --ref-muted: #7f93a8;
   --tip-bg: #ffffff;
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.08);
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --tray: #e8eef4; /* background of segmented groups and slider tracks */
+  --shadow-card: 0 1px 3px rgba(29, 53, 80, 0.06),
+    0 8px 24px rgba(29, 53, 80, 0.09);
+  --shadow: 0 2px 5px rgba(29, 53, 80, 0.09), 0 10px 24px rgba(29, 53, 80, 0.14);
+  --raised: linear-gradient(#ffffff, #f2f6f9); /* buttons and knobs */
+  --font: "Nunito Variable", "Nunito", system-ui, -apple-system, "Segoe UI",
+    Roboto, sans-serif;
+  font-family: var(--font);
 }
 
 *,
@@ -44,13 +64,14 @@ html {
 html,
 body {
   margin: 0;
-  background: var(--page);
   color: var(--text-primary);
 }
 
 body {
+  min-height: 100vh;
   font-size: 14px;
   line-height: 1.45;
+  background: linear-gradient(var(--page-top), var(--page-bottom)) fixed;
 }
 
 /* ---------- top bar ---------- */
@@ -62,14 +83,35 @@ body {
   justify-content: space-between;
   max-width: 1200px;
   margin: 0 auto;
-  padding: 14px 16px 10px;
+  padding: 16px 16px 12px;
 }
 
 h1 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   margin: 0;
-  font-size: 20px;
-  font-weight: 650;
+  font-size: 24px;
+  font-weight: 900;
   letter-spacing: -0.01em;
+  color: var(--brand-ink);
+}
+
+/* round badge beside the title, like a menu icon */
+.title-badge {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 3px solid #ffffff;
+  background: radial-gradient(circle at 35% 30%, #2c95e2, #1265b0);
+  box-shadow: 0 2px 5px rgba(29, 53, 80, 0.22);
+  display: grid;
+  place-items: center;
+}
+
+.title-badge svg {
+  display: block;
 }
 
 .simbar {
@@ -82,43 +124,44 @@ h1 {
 .clock {
   margin-right: 4px;
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 
+/* pill buttons with a slight raised edge */
 .btn {
-  height: 32px;
-  padding: 0 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface-1);
-  color: var(--text-primary);
+  height: 34px;
+  padding: 0 18px;
+  border: 1px solid #cfd9e3;
+  border-radius: 999px;
+  background: var(--raised);
+  color: var(--brand-ink);
   font: inherit;
-  font-weight: 550;
+  font-weight: 800;
+  box-shadow:
+    0 1px 0 #d3dde7,
+    0 2px 6px rgba(29, 53, 80, 0.08);
   cursor: pointer;
+  transition:
+    transform 0.08s ease,
+    box-shadow 0.08s ease;
 }
 
 .btn:hover {
-  background: var(--surface-2);
+  background: #ffffff;
 }
 
-/* speed selector: pause and one to four arrows, drawn as SVG */
-#speed button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 34px;
+.btn:active {
+  transform: translateY(1px);
+  box-shadow: 0 1px 2px rgba(29, 53, 80, 0.08);
 }
 
-.playback-icon {
-  display: block;
-}
-
-/* The playback option that's on is filled with the accent colour. */
-#speed button[aria-checked="true"] {
-  background: var(--accent);
-  color: var(--on-accent);
-  box-shadow: none;
+/* small-caps labels, like section titles in a game menu */
+.rooms-label,
+.ctl-label,
+.rad-name {
+  font-variant-caps: all-small-caps;
+  letter-spacing: 0.04em;
 }
 
 /* number of rooms, at the start of the top bar */
@@ -130,57 +173,71 @@ h1 {
 }
 
 .rooms-label {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-secondary);
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--brand-ink);
 }
 
 .rooms-picker .seg button {
-  min-width: 30px;
+  min-width: 34px;
 }
 
-/* segmented radio groups (rooms, speed, TRV, insulation) */
+/* segmented radio groups (rooms, speed, TRV, insulation): a pill tray with
+   the chosen option lit up in blue */
 .seg {
   display: inline-flex;
-  padding: 2px;
-  gap: 2px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface-2);
+  padding: 3px;
+  gap: 3px;
+  border-radius: 999px;
+  background: var(--tray);
+  box-shadow: inset 0 1px 2px rgba(29, 53, 80, 0.12);
 }
 
 .seg button {
   flex: 1 1 0;
-  min-width: 26px;
-  height: 26px;
-  padding: 0 8px;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 10px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 999px;
   background: transparent;
   color: var(--text-secondary);
   font: inherit;
   font-size: 13px;
-  font-weight: 550;
+  font-weight: 800;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   cursor: pointer;
 }
 
 .seg button:hover {
-  color: var(--text-primary);
+  color: var(--brand-ink);
+  background: rgba(255, 255, 255, 0.7);
 }
 
 .seg button[aria-checked="true"] {
-  background: var(--surface-1);
-  color: var(--text-primary);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.14);
+  background: var(--brand-fill);
+  color: var(--on-accent);
+  box-shadow: 0 1px 3px rgba(18, 101, 176, 0.35);
+}
+
+/* speed selector: pause and one to four arrows, drawn as SVG */
+#speed button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+}
+
+.playback-icon {
+  display: block;
 }
 
 .btn:focus-visible,
 .seg button:focus-visible,
 input[type="range"]:focus-visible,
 summary:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 3px solid #7cc4f5;
   outline-offset: 2px;
 }
 
@@ -188,20 +245,23 @@ summary:focus-visible {
 .page {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
   max-width: 1200px;
   margin: 0 auto;
-  padding: 0 16px 28px;
+  padding: 0 16px 32px;
 }
 
 .card {
   background: var(--surface-1);
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  border-radius: 20px;
+  box-shadow: var(--shadow-card);
 }
 
+/* The diagram sits in a white frame with rounded corners. */
 .scene-card {
   overflow: hidden;
+  padding: 8px;
 }
 
 .scene {
@@ -211,6 +271,7 @@ summary:focus-visible {
      still at its old size (an aspect-ratio box never shrinks below its content). */
   overflow: hidden;
   min-height: 0;
+  border-radius: 14px;
   background: #f1ede5;
 }
 
@@ -225,9 +286,8 @@ summary:focus-visible {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.6fr) minmax(0, 1fr);
   grid-template-areas: "power flow stat ins out";
-  gap: 12px 20px;
-  padding: 12px 16px;
-  border-top: 1px solid var(--border);
+  gap: 14px 22px;
+  padding: 16px 12px 12px;
 }
 
 .ctl {
@@ -247,23 +307,28 @@ summary:focus-visible {
 .ctl-ins { grid-area: ins; }
 .ctl-out { grid-area: out; }
 
+/* each radiator's row sits on its own soft panel */
 .radiators {
   display: grid;
   gap: 10px;
-  padding: 0 16px 12px;
+  padding: 4px 12px 12px;
 }
 
 .rad-row {
   display: grid;
   grid-template-columns: 76px minmax(0, 1.6fr) minmax(0, 1fr);
   align-items: end;
-  gap: 12px 20px;
+  gap: 12px 22px;
+  padding: 10px 14px 12px;
+  border-radius: 16px;
+  background: var(--surface-3);
+  box-shadow: inset 0 0 0 1px var(--border);
 }
 
 .rad-name {
-  padding-bottom: 5px;
-  font-size: 12px;
-  font-weight: 650;
+  padding-bottom: 6px;
+  font-size: 16px;
+  font-weight: 900;
   color: var(--text-primary);
 }
 
@@ -288,77 +353,142 @@ summary:focus-visible {
   .rad-name {
     padding-bottom: 0;
   }
+  h1 {
+    font-size: 20px;
+  }
 }
 
 .ctl-label {
   display: flex;
   justify-content: space-between;
+  align-items: baseline;
   gap: 8px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-secondary);
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--brand-ink);
 }
 
 .ctl-label output {
+  font-variant-caps: normal;
+  letter-spacing: 0;
+  font-size: 13px;
+  font-weight: 800;
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
 }
 
+/* sliders: a rounded blue-filled track with a white knob. Script sets
+   --fill to how far along the value is. */
 input[type="range"] {
+  --fill: 50%;
   width: 100%;
   height: 26px;
   margin: 0;
-  accent-color: var(--accent);
+  background: transparent;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--brand) var(--fill),
+    #d6e0ea var(--fill)
+  );
+  box-shadow: inset 0 1px 1px rgba(29, 53, 80, 0.15);
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 22px;
+  height: 22px;
+  margin-top: -7px;
+  border: 3px solid var(--brand);
+  border-radius: 50%;
+  background: var(--raised);
+  box-shadow: 0 1px 4px rgba(29, 53, 80, 0.28);
+}
+
+input[type="range"]::-moz-range-track {
+  height: 8px;
+  border-radius: 999px;
+  background: #d6e0ea;
+}
+
+input[type="range"]::-moz-range-progress {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--brand);
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border: 3px solid var(--brand);
+  border-radius: 50%;
+  background: var(--raised);
+  box-shadow: 0 1px 4px rgba(29, 53, 80, 0.28);
 }
 
 /* on/off switch */
 .switch {
   position: relative;
-  width: 46px;
-  height: 26px;
+  width: 52px;
+  height: 30px;
   padding: 0;
-  border: 1px solid var(--border);
-  border-radius: 13px;
-  background: var(--surface-2);
+  border: 1px solid #cfd9e3;
+  border-radius: 999px;
+  background: #d6e0ea;
+  box-shadow: inset 0 1px 2px rgba(29, 53, 80, 0.15);
   cursor: pointer;
 }
 
 .switch .knob {
   position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 20px;
-  height: 20px;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
-  background: #ffffff;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  background: var(--raised);
+  box-shadow: 0 1px 3px rgba(29, 53, 80, 0.32);
   transition: transform 0.15s ease;
 }
 
 .switch[aria-checked="true"] {
-  background: #16a34a;
+  background: var(--go-fill);
   border-color: transparent;
 }
 
 .switch[aria-checked="true"] .knob {
-  transform: translateX(20px);
+  transform: translateX(22px);
 }
 
 .switch:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 3px solid #7cc4f5;
   outline-offset: 2px;
 }
 
 /* ---------- collapsible controls group ---------- */
+/* A bright blue title bar, opening the panel below. */
 .controls-group > summary {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 10px;
-  padding: 10px 16px;
-  border-top: 1px solid var(--border);
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-secondary);
+  margin: 8px 0 0;
+  padding: 8px 16px;
+  border-radius: 14px;
+  background: var(--brand-fill);
+  box-shadow: 0 2px 6px rgba(18, 101, 176, 0.25);
+  color: #ffffff;
+  font-size: 19px;
+  font-weight: 900;
+  font-variant-caps: all-small-caps;
+  letter-spacing: 0.06em;
   cursor: pointer;
   list-style: none;
   user-select: none;
@@ -370,10 +500,11 @@ input[type="range"] {
 
 .controls-group > summary::before {
   content: "";
-  width: 6px;
-  height: 6px;
-  border-right: 2px solid currentColor;
-  border-bottom: 2px solid currentColor;
+  width: 7px;
+  height: 7px;
+  border-right: 3px solid currentColor;
+  border-bottom: 3px solid currentColor;
+  border-radius: 1px;
   transform: rotate(-45deg);
   transition: transform 0.15s ease;
 }
@@ -383,14 +514,14 @@ input[type="range"] {
 }
 
 .controls-group > summary:hover {
-  color: var(--text-primary);
+  filter: brightness(1.06);
 }
 
 .view-options {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 20px;
-  padding: 0 16px 12px;
+  gap: 8px 24px;
+  padding: 0 14px 6px;
 }
 
 /* ---------- legend row under the canvas ---------- */
@@ -400,30 +531,36 @@ input[type="range"] {
   align-items: center;
   justify-content: flex-end;
   gap: 8px 20px;
-  padding: 10px 16px 12px;
-  border-top: 1px solid var(--border);
+  padding: 8px 6px 0;
 }
 
 .view-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
   color: var(--text-secondary);
   cursor: pointer;
   white-space: nowrap;
 }
 
 .view-toggle input {
+  width: 16px;
+  height: 16px;
   margin: 0;
-  accent-color: var(--accent);
+  accent-color: var(--brand);
 }
 
 .water-legend {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 11px;
+  gap: 8px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-size: 12px;
+  font-weight: 700;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
@@ -431,18 +568,20 @@ input[type="range"] {
 .water-scale {
   display: block;
   width: 120px;
-  height: 8px;
-  border-radius: 4px;
+  height: 10px;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px rgba(29, 53, 80, 0.12);
 }
 
 /* ---------- history ---------- */
 .history {
-  padding: 10px 16px;
+  padding: 12px 16px;
 }
 
 .history > summary {
   cursor: pointer;
-  font-weight: 600;
+  font-weight: 800;
+  color: var(--brand-ink);
   width: max-content;
 }
 
@@ -502,7 +641,7 @@ input[type="range"] {
   overflow: auto;
   margin-top: 6px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 12px;
 }
 
 .table-wrap table {
@@ -523,7 +662,7 @@ input[type="range"] {
   position: sticky;
   top: 0;
   background: var(--surface-2);
-  font-weight: 600;
+  font-weight: 800;
   color: var(--text-secondary);
 }
 
@@ -533,19 +672,20 @@ input[type="range"] {
 }
 
 /* ---------- tooltip ---------- */
+/* A white speech-bubble card with a blue small-caps title. */
 .tooltip {
   position: fixed;
   top: 0;
   left: 0;
   z-index: 50;
-  max-width: 290px;
-  padding: 10px 12px;
+  max-width: 300px;
+  padding: 12px 14px;
   background: var(--tip-bg);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 16px;
   box-shadow: var(--shadow);
   pointer-events: none;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .tooltip[hidden] {
@@ -553,8 +693,11 @@ input[type="range"] {
 }
 
 .tip-title {
-  font-weight: 600;
-  color: var(--text-secondary);
+  font-size: 15px;
+  font-weight: 900;
+  font-variant-caps: all-small-caps;
+  letter-spacing: 0.04em;
+  color: var(--brand-ink);
 }
 
 .tip-value {
@@ -562,16 +705,19 @@ input[type="range"] {
   align-items: center;
   gap: 8px;
   margin-top: 2px;
-  font-size: 18px;
-  font-weight: 700;
+  font-size: 20px;
+  font-weight: 900;
+  color: var(--text-primary);
   font-variant-numeric: tabular-nums;
 }
 
 .tip-swatch {
-  width: 14px;
-  height: 14px;
-  border-radius: 4px;
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.15);
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.15),
+    0 0 0 2px #ffffff;
 }
 
 .tip-rows {
@@ -579,6 +725,9 @@ input[type="range"] {
   grid-template-columns: auto auto;
   gap: 3px 14px;
   margin: 8px 0 0;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: var(--surface-3);
 }
 
 .tip-rows dt {
@@ -586,12 +735,14 @@ input[type="range"] {
   align-items: center;
   gap: 6px;
   color: var(--text-secondary);
+  font-weight: 600;
 }
 
 .tip-rows dd {
   margin: 0;
   text-align: right;
-  font-weight: 600;
+  font-weight: 800;
+  color: var(--text-primary);
   font-variant-numeric: tabular-nums;
 }
 

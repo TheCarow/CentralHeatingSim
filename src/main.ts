@@ -1,3 +1,4 @@
+import "@fontsource-variable/nunito"; // friendly rounded type, bundled with the site
 import { makePlan } from "./house/plan";
 import { Sim } from "./sim/model";
 import { HeatingScene } from "./scene/HeatingScene";
@@ -17,6 +18,9 @@ const DEFAULT_SPEED = 20;
   const tooltip = new Tooltip(document.getElementById("tooltip")!);
   const scene = new HeatingScene(sim);
   const chart = new HistoryChart(sim, tooltip);
+  // The diagram's labels are drawn once with the font they find, so make
+  // sure Nunito has loaded first (it falls back to system fonts if not).
+  await document.fonts.load('600 16px "Nunito Variable"').catch(() => []);
   await scene.init(document.getElementById("scene")!);
 
   // The history chart lives in a collapsed <details>; create it on first open.

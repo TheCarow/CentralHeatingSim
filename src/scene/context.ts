@@ -8,7 +8,8 @@ import type { Pt } from "./geometry";
 import type { Hit } from "./hit";
 import type { HouseLayout } from "./layout";
 
-export const FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+export const FONT =
+  '"Nunito Variable", "Nunito", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 export const INK = 0x2b2a27;
 export const MUTED = 0x6f6a62;
 

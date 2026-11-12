@@ -58,6 +58,14 @@ function segmented(
   return buttons;
 }
 
+/** Show how far along a slider's value is (the blue part of its track). */
+function paintFill(input: HTMLInputElement): void {
+  const min = Number(input.min);
+  const max = Number(input.max);
+  const pct = ((Number(input.value) - min) / (max - min)) * 100;
+  input.style.setProperty("--fill", `${pct}%`);
+}
+
 function markChecked(buttons: HTMLButtonElement[], index: number): void {
   buttons.forEach((b, i) => {
     b.setAttribute("aria-checked", String(i === index));
@@ -244,6 +252,7 @@ export class Controls {
     this.flow.value = String(p.flowSet);
     this.stat.value = String(p.thermostatSet);
     this.out.value = String(p.outdoor);
+    for (const r of [this.flow, this.stat, this.out]) paintFill(r);
     $("o-flow").textContent = `${p.flowSet} °C`;
     $("o-stat").textContent = p.thermostatOn ? fmtT(p.thermostatSet) : "Off";
     $("o-out").textContent = `${p.outdoor} °C`;
@@ -259,6 +268,7 @@ export class Controls {
       markChecked(row.trvButtons, rad.trvIndex);
       const pct = Math.round(rad.lockshield * 100);
       row.ls.value = String(pct);
+      paintFill(row.ls);
       row.lsOut.textContent = `${pct}%`;
     });
   }

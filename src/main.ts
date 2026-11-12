@@ -6,6 +6,7 @@ import { HistoryChart, clockLabel } from "./chart/HistoryChart";
 import { Tooltip } from "./ui/tooltip";
 import { describe } from "./ui/describe";
 import { Controls } from "./ui/controls";
+import { playbackIcon } from "./ui/playbackIcon";
 
 const SPEEDS = [1, 20, 60, 600] as const;
 const DEFAULT_SPEED = 20;
@@ -74,36 +75,49 @@ const DEFAULT_SPEED = 20;
   };
 
   // ---- simulation speed / pause / reset ----
+  // One selector: pause, then one to four arrows for the speeds. Picking a
+  // speed also resumes; Space pauses and resumes at the last speed.
   let speed: number = DEFAULT_SPEED;
   let paused = false;
   const speedBox = document.getElementById("speed")!;
-  const speedButtons = SPEEDS.map((s) => {
+  const choice = (label: string, title: string, arrows: number) => {
     const b = document.createElement("button");
     b.type = "button";
     b.setAttribute("role", "radio");
-    b.textContent = `${s}×`;
-    b.title = s === 1 ? "Real time" : `${s} simulated seconds per second`;
-    b.addEventListener("click", () => {
-      speed = s;
-      syncSpeed();
-    });
+    b.setAttribute("aria-label", label);
+    b.title = title;
+    b.append(playbackIcon(arrows));
     speedBox.append(b);
     return b;
+  };
+  const pauseBtn = choice("Pause", "Pause (Space)", 0);
+  pauseBtn.addEventListener("click", () => {
+    paused = true;
+    syncSpeed();
   });
-  const playBtn = document.getElementById("btn-play")!;
-  const syncSpeed = () => {
-    speedButtons.forEach((b, i) =>
-      b.setAttribute("aria-checked", String(SPEEDS[i] === speed)),
+  const speedButtons = SPEEDS.map((s, i) => {
+    const b = choice(
+      `${s}× speed`,
+      s === 1 ? "Real time" : `${s}× (${s} simulated seconds per second)`,
+      i + 1,
     );
-    playBtn.setAttribute("aria-pressed", String(paused));
-    playBtn.setAttribute("aria-label", paused ? "Play" : "Pause");
-    playBtn.firstElementChild!.className = paused ? "icon-play" : "icon-pause";
+    b.addEventListener("click", () => {
+      speed = s;
+      paused = false;
+      syncSpeed();
+    });
+    return b;
+  });
+  const syncSpeed = () => {
+    pauseBtn.setAttribute("aria-checked", String(paused));
+    speedButtons.forEach((b, i) =>
+      b.setAttribute("aria-checked", String(!paused && SPEEDS[i] === speed)),
+    );
   };
   const togglePause = () => {
     paused = !paused;
     syncSpeed();
   };
-  playBtn.addEventListener("click", togglePause);
   document.getElementById("btn-cold")!.addEventListener("click", () => {
     // Everything — room, water, pipes, TRV sensor — at the outdoor temperature.
     sim.reset(sim.params.outdoor);

@@ -129,29 +129,16 @@ h1 {
   background: var(--surface-2);
 }
 
-.icon-btn {
-  width: 32px;
-  padding: 0;
-  display: grid;
-  place-items: center;
+/* speed selector: pause and one to four arrows, drawn as SVG */
+#speed button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
 }
 
-.icon-pause {
+.playback-icon {
   display: block;
-  width: 11px;
-  height: 12px;
-  border-left: 4px solid currentColor;
-  border-right: 4px solid currentColor;
-}
-
-.icon-play {
-  display: block;
-  width: 0;
-  height: 0;
-  margin-left: 3px;
-  border-left: 11px solid currentColor;
-  border-top: 7px solid transparent;
-  border-bottom: 7px solid transparent;
 }
 
 /* number of rooms, at the start of the top bar */

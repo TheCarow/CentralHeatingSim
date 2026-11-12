@@ -64,7 +64,6 @@ export class FabricView implements View {
   private readonly sun = new Graphics(sunCtx);
   private readonly moon = new Graphics(moonCtx);
   private night = false; // outside labels currently in their night colours
-  private readonly loftText: Text;
   private readonly outsideTitle: Text;
   private readonly outsideTemp: Text;
 
@@ -133,12 +132,6 @@ export class FabricView implements View {
     this.sun.visible = this.moon.visible = false;
     layers.fx.addChild(this.sun, this.moon);
 
-    this.loftText = ctx.label("", 24, 30, {
-      size: 11,
-      weight: "600",
-      color: 0x7a6420,
-    });
-    this.loftText.visible = false; // shown only while the loft is hovered
     // Outside reading sits level with the thermostat's temperature reading.
     this.outsideTitle = ctx.label("OUTSIDE", 0, lay.thermoReadY - 13, {
       size: 11,
@@ -244,8 +237,6 @@ export class FabricView implements View {
         lg.lineTo(xx, k % 2 ? lay.loftFloor - th + 2 : lay.loftFloor - 2);
       lg.stroke({ width: 1.2, color: 0xd29f24 });
     }
-    this.loftText.text = `Loft insulation ${ins.loft.mm} mm`;
-    this.loftText.y = Math.max(4, lay.loftFloor - th - 18);
 
     const cx = (x + lay.W) / 2;
     this.outsideTitle.x = cx;
@@ -295,7 +286,6 @@ export class FabricView implements View {
       s.g.position.set(s.x + Math.sin(this.snowClock * 1.3 + s.v) * 3, s.y);
     }
 
-    this.loftText.visible = f.hover?.kind === "loft";
     // (+ 0 turns -0 into 0, so a reading never shows "-0 °C")
     if (f.refreshText) this.outsideTemp.text = `${Math.round(To) + 0} °C`;
   }

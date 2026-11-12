@@ -209,7 +209,10 @@ const DEFAULT_SPEED = 20;
     tipTimer += dt;
     if (uiTimer >= 0.2) {
       uiTimer = 0;
-      clock.textContent = `Day ${Math.floor(sim.time / 86400) + 1} · ${clockLabel(sim.time % 86400)}`;
+      // The clock only matters while the outside follows the time of day.
+      clock.hidden = !sim.params.dayNight;
+      if (!clock.hidden)
+        clock.textContent = `Day ${Math.floor(sim.time / 86400) + 1} · ${clockLabel(sim.time % 86400)}`;
     }
     if (chartTimer >= 0.5) {
       chartTimer = 0;

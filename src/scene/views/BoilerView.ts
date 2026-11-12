@@ -41,12 +41,21 @@ const flameCtx = new GraphicsContext()
   .closePath()
   .fill(0x60a5fa);
 
+/**
+ * How fast the flames flicker at a simulation speed, relative to real time:
+ * only slightly faster at high speeds (speed^0.15: about 1.6x at 20x, 2.6x
+ * at 600x), and still while paused.
+ */
+const flickerRate = (speed: number) => (speed > 0 ? Math.pow(speed, 0.15) : 0);
+
 export class BoilerView implements View {
   private readonly ctx: SceneContext;
   private readonly hxG = new Graphics();
   private readonly intFlowG = new Graphics();
   private readonly intRetG = new Graphics();
   private readonly flames: Graphics[] = [];
+  /** Time as the flames see it: runs at flickerRate(speed). */
+  private flameClock = 0;
   private readonly impeller = new Graphics();
   private readonly powerBtn = new Graphics();
   private readonly displayTemp: Text;
@@ -174,12 +183,13 @@ export class BoilerView implements View {
 
     const burning = sim.burnerW > 30;
     const intensity = 0.55 + 0.6 * Math.min(1, sim.burnerW / 2500);
+    this.flameClock += f.dt * flickerRate(f.speed);
     this.flames.forEach((fl, i) => {
       fl.visible = burning;
       if (burning)
         fl.scale.set(
           1,
-          intensity * (0.82 + 0.18 * Math.sin(f.clock * 17 + i * 1.9)),
+          intensity * (0.82 + 0.18 * Math.sin(this.flameClock * 17 + i * 1.9)),
         );
     });
     this.powerBtn.tint = p.boilerOn ? 0x16a34a : 0x9ca3af;

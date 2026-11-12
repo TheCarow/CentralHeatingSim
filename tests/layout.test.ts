@@ -113,6 +113,29 @@ describe.each(Array.from({ length: MAX_ROOMS }, (_, i) => i + 1))(
       }
     });
 
+    it("finds where each lockshield drop crosses the flow main", () => {
+      // Every room but the last drops its return through the flow main.
+      expect(lay.crossings).toHaveLength(n - 1);
+      lay.crossings.forEach((x, k) => {
+        expect(x.front).toEqual({ role: "lsTail", n: k });
+        expect(x.back).toEqual({ role: "flow", n: k + 1 });
+        expect(x.at).toEqual({ x: lay.rooms[k].lockX, y: lay.flowY });
+      });
+    });
+
+    it("keeps the drawing a sensible width", () => {
+      // One room fills the original drawing; more rooms share a wider one.
+      if (n === 1) expect(lay.W).toBe(1200);
+      else expect(Math.abs(lay.W - 1500)).toBeLessThanOrEqual(n);
+      for (const r of lay.rooms) {
+        expect(r.rad.w).toBeGreaterThanOrEqual(150);
+        // thermostat (room 1) and TRV head sit at different heights
+        expect(r.trvHead.y).toBeGreaterThan(
+          lay.thermostat.y + lay.thermostat.h,
+        );
+      }
+    });
+
     it("connects pipes to the radiators and the boiler", () => {
       const b = lay.boiler;
       expect(first(lay.pipes.flow[0].pts)).toEqual({

@@ -13,8 +13,11 @@
   --grid: #e1e0d9;
   --baseline: #c3c2b7;
   --wash: #e34948;
-  /* chart series (validated CVD-safe per panel) */
+  /* chart series (validated CVD-safe per panel; room lines in order
+     room, room-2, room-3 alongside outdoor) */
   --series-room: #eb6834;
+  --series-room-2: #6250d6;
+  --series-room-3: #eda100;
   --series-outdoor: #1baf7a;
   --series-flow: #e34948;
   --series-return: #2a78d6;
@@ -42,6 +45,8 @@
     --baseline: #383835;
     --wash: #e66767;
     --series-room: #d95926;
+    --series-room-2: #9085e9;
+    --series-room-3: #c98500;
     --series-outdoor: #199e70;
     --series-flow: #e66767;
     --series-return: #3987e5;
@@ -216,7 +221,11 @@ summary:focus-visible {
 
 .scene {
   width: 100%;
-  aspect-ratio: 12 / 7;
+  aspect-ratio: 12 / 7; /* replaced by the drawing's own shape from script */
+  /* Let the box shrink to its aspect ratio even while the canvas inside is
+     still at its old size (an aspect-ratio box never shrinks below its content). */
+  overflow: hidden;
+  min-height: 0;
   background: #f1ede5;
 }
 
@@ -226,10 +235,11 @@ summary:focus-visible {
 }
 
 /* ---------- control strip ---------- */
+/* Whole-house settings in one strip, then one row per radiator. */
 .controls {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1.6fr) minmax(0, 1fr);
-  grid-template-areas: "power flow stat trv ls ins out";
+  grid-template-columns: auto auto minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.6fr) minmax(0, 1fr);
+  grid-template-areas: "power rooms flow stat ins out";
   gap: 12px 20px;
   padding: 12px 16px;
   border-top: 1px solid var(--border);
@@ -247,27 +257,56 @@ summary:focus-visible {
 }
 
 .ctl-power { grid-area: power; }
+.ctl-rooms { grid-area: rooms; }
 .ctl-flow { grid-area: flow; }
 .ctl-stat { grid-area: stat; }
-.ctl-trv { grid-area: trv; }
 .ctl-ins { grid-area: ins; }
 .ctl-out { grid-area: out; }
-.ctl-ls { grid-area: ls; }
 
-/* Medium widths: power and sliders on one row, the two button groups below. */
+.ctl-rooms .seg button {
+  min-width: 34px;
+}
+
+.radiators {
+  display: grid;
+  gap: 10px;
+  padding: 0 16px 12px;
+}
+
+.rad-row {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1.6fr) minmax(0, 1fr);
+  align-items: end;
+  gap: 12px 20px;
+}
+
+.rad-name {
+  padding-bottom: 5px;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--text-primary);
+}
+
+/* Medium widths: power, rooms and sliders on one row; insulation below. */
 @media (max-width: 1180px) {
   .controls {
-    grid-template-columns: auto repeat(3, minmax(0, 1fr));
+    grid-template-columns: auto auto minmax(0, 1fr) minmax(0, 1fr);
     grid-template-areas:
-      "power flow stat out"
-      "trv ls ins ins";
+      "power rooms flow stat"
+      "ins ins ins out";
   }
 }
 
 @media (max-width: 560px) {
   .controls {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-areas: "power" "flow" "stat" "trv" "ls" "ins" "out";
+    grid-template-areas: "power" "rooms" "flow" "stat" "ins" "out";
+  }
+  .rad-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .rad-name {
+    padding-bottom: 0;
   }
 }
 

@@ -57,6 +57,13 @@ export interface RoomLayout {
   teeReturn: Pt;
 }
 
+/** Where one pipe passes in front of another (they are not joined). */
+export interface Crossing {
+  at: Pt;
+  front: { role: EdgeRole; n: number };
+  back: { role: EdgeRole; n: number };
+}
+
 export interface LossArrowLayout {
   wallX1: number; // horizontal arrows start inside the room...
   ventY: number;
@@ -95,6 +102,8 @@ export interface HouseLayout {
     lsTail: Polyline[];
     bypass: Polyline;
   };
+  /** Each lockshield drop (except the last) crosses the flow main in front. */
+  crossings: Crossing[];
 }
 
 /** Size of the magnified TRV cut-away card. */
@@ -114,13 +123,22 @@ const FLOW_Y = 588;
 const RETURN_Y = 612;
 const JUNCTION_Y = 546;
 
-const ROOM_W = 684;
+// One room fills the original 1200-wide drawing. With more rooms they share
+// a slightly wider drawing, so each room is narrower.
+const ONE_ROOM_W = 684;
+const ROOMS_BUDGET = 1000; // design units for rooms + their internal walls
 
-// Inside a room, relative to its left edge.
-const RAD_DX = 314;
+/** Interior width of each room when there are n of them. */
+export function roomWidth(n: number): number {
+  return n === 1 ? ONE_ROOM_W : Math.floor(ROOMS_BUDGET / n) - PARTITION_W;
+}
+
+// Inside a room. The radiator sits towards the right-hand wall; it keeps its
+// full width while the room has space for it and the valves either side.
 const RAD_Y = 392;
-const RAD_W = 220;
+const RAD_MAX_W = 220;
 const RAD_H = 118;
+const RAD_SPACE = 160; // room width the radiator leaves for valves and margins
 const TAIL_DY = 6; // tails run this far above the radiator's bottom edge
 const VALVE_DX = 23; // valve centre lines, out from the radiator's ends
 const BODY_UP = 20; // valve body extends this far above the tail line...
@@ -170,7 +188,9 @@ function roomLayout(
   w: number,
   last: boolean,
 ): RoomLayout {
-  const rad = { x: x + RAD_DX, y: RAD_Y, w: RAD_W, h: RAD_H };
+  const radW = Math.min(RAD_MAX_W, w - RAD_SPACE);
+  const rightGap = Math.min(150, Math.max(40, Math.round(w * 0.22)));
+  const rad = { x: x + w - rightGap - radW, y: RAD_Y, w: radW, h: RAD_H };
   const tailY = rad.y + rad.h - TAIL_DY;
   const trvX = rad.x - VALVE_DX;
   const lockX = rad.x + rad.w + VALVE_DX;
@@ -205,12 +225,13 @@ export function computeLayout(plan: HousePlan): HouseLayout {
   const cupboard = { x: 0, y: CEIL_Y, w: CUPBOARD_W, h: FLOOR_Y - CEIL_Y };
   const partitions: Rect[] = [];
   const rooms: RoomLayout[] = [];
+  const roomW = roomWidth(n);
   let x = CUPBOARD_W;
   for (let k = 0; k < n; k++) {
     partitions.push({ x, y: CEIL_Y, w: PARTITION_W, h: FLOOR_Y - CEIL_Y });
     x += PARTITION_W;
-    rooms.push(roomLayout(k, x, ROOM_W, k === n - 1));
-    x += ROOM_W;
+    rooms.push(roomLayout(k, x, roomW, k === n - 1));
+    x += roomW;
   }
   const wallX = x;
   const b = boiler();
@@ -304,7 +325,44 @@ export function computeLayout(plan: HousePlan): HouseLayout {
       roofBottom: 150,
     },
     pipes: { flow, ret, trvTail, lsTail, bypass },
+    crossings: findCrossings([
+      ...flow.map((path, k) => ({ role: "flow" as const, n: k, path })),
+      ...trvTail.map((path, k) => ({ role: "trvTail" as const, n: k, path })),
+      ...lsTail.map((path, k) => ({ role: "lsTail" as const, n: k, path })),
+      { role: "bypass" as const, n: 0, path: bypass },
+      ...ret.map((path, k) => ({ role: "ret" as const, n: k, path })),
+    ]),
   };
+}
+
+/**
+ * Points where a vertical stretch of one pipe passes over a horizontal
+ * stretch of another, away from either's ends (so not a tee). Every pipe
+ * run is made of horizontal and vertical segments. The vertical pipe is
+ * drawn in front.
+ */
+function findCrossings(
+  runs: { role: EdgeRole; n: number; path: Polyline }[],
+): Crossing[] {
+  const out: Crossing[] = [];
+  const segs = runs.flatMap((r) =>
+    r.path.pts.slice(1).map((b, i) => ({ r, a: r.path.pts[i], b })),
+  );
+  const inside = (v: number, p: number, q: number) =>
+    v > Math.min(p, q) + 0.5 && v < Math.max(p, q) - 0.5;
+  for (const v of segs) {
+    if (v.a.x !== v.b.x) continue; // vertical segments only
+    for (const h of segs) {
+      if (h.r === v.r || h.a.y !== h.b.y) continue; // horizontal, other pipe
+      if (inside(v.a.x, h.a.x, h.b.x) && inside(h.a.y, v.a.y, v.b.y))
+        out.push({
+          at: { x: v.a.x, y: h.a.y },
+          front: { role: v.r.role, n: v.r.n },
+          back: { role: h.r.role, n: h.r.n },
+        });
+    }
+  }
+  return out;
 }
 
 /** The drawn path of a circuit edge (null for the boiler and radiators). */

@@ -1,3 +1,4 @@
+import { makePlan } from "./house/plan";
 import { Sim } from "./sim/model";
 import { HeatingScene } from "./scene/HeatingScene";
 import type { Hit } from "./scene/hit";
@@ -11,7 +12,7 @@ const DEFAULT_SPEED = 20;
 
 // Wrapped in an async IIFE: top-level await breaks `vite build` on Vite <= 6.
 (async () => {
-  const sim = new Sim();
+  let sim = new Sim();
   const tooltip = new Tooltip(document.getElementById("tooltip")!);
   const scene = new HeatingScene(sim);
   const chart = new HistoryChart(sim, tooltip);
@@ -39,8 +40,36 @@ const DEFAULT_SPEED = 20;
   controls.build();
 
   // Dev-only handle for poking at the simulation from the console.
-  if (import.meta.env.DEV)
-    Object.assign(window, { __heating: { sim, scene, chart, controls } });
+  const devHandle = () => {
+    if (import.meta.env.DEV)
+      Object.assign(window, { __heating: { sim, scene, chart, controls } });
+  };
+  devHandle();
+
+  // ---- number of rooms ----
+  // A different house means a different pipe network, so build a new sim
+  // and cold-start it. Whole-house settings carry over, and so do the
+  // settings of radiators that are still there.
+  controls.onRooms = (rooms) => {
+    const old = sim.params;
+    const next = new Sim(makePlan(rooms));
+    const p = next.params;
+    p.flowSet = old.flowSet;
+    p.thermostatSet = old.thermostatSet;
+    p.thermostatOn = old.thermostatOn;
+    p.boilerOn = old.boilerOn;
+    p.insulation = old.insulation;
+    p.outdoor = old.outdoor;
+    old.radiators.forEach((r, k) => {
+      if (k < rooms) p.radiators[k] = { ...r };
+    });
+    next.reset(p.outdoor);
+    sim = next;
+    scene.setSim(sim);
+    chart.setSim(sim);
+    controls.setSim(sim);
+    devHandle();
+  };
 
   // ---- simulation speed / pause / reset ----
   let speed: number = DEFAULT_SPEED;

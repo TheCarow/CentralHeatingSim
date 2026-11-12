@@ -1,6 +1,8 @@
 /*
- * The control strip under the diagram, and the history legend / table.
+ * The controls under the diagram (whole-house settings, then one row per
+ * radiator), and the history legend / table.
  */
+import { MAX_ROOMS } from "../house/plan";
 import {
   INSULATION,
   TRV_SETTINGS,
@@ -8,7 +10,7 @@ import {
   type InsulationKey,
   type Sim,
 } from "../sim/model";
-import { SERIES, clockLabel } from "../chart/HistoryChart";
+import { clockLabel, seriesFor } from "../chart/HistoryChart";
 import { waterGradientCss } from "../scene/colors";
 import { roomOf, type Hit } from "../scene/hit";
 
@@ -65,55 +67,67 @@ function markChecked(buttons: HTMLButtonElement[], index: number): void {
 
 const INS_KEYS = Object.keys(INSULATION) as InsulationKey[];
 
+const TRV_ITEMS = TRV_SETTINGS.map((s) => ({
+  label: s.label,
+  title:
+    s.target == null
+      ? "0: shut"
+      : `${s.label === "❄" ? "Frost" : s.label}: about ${s.target} °C`,
+}));
+
+/** The controls for one radiator. */
+interface RadiatorRow {
+  trvButtons: HTMLButtonElement[];
+  trvOut: HTMLOutputElement;
+  ls: HTMLInputElement;
+  lsOut: HTMLOutputElement;
+}
+
 export class Controls {
-  private readonly sim: Sim;
+  /** Called when the user picks a different number of rooms. */
+  onRooms?: (rooms: number) => void;
+
+  private sim: Sim;
   private readonly flow = $<HTMLInputElement>("i-flow");
   private readonly stat = $<HTMLInputElement>("i-stat");
   private readonly out = $<HTMLInputElement>("i-out");
-  private readonly ls = $<HTMLInputElement>("i-ls");
   private readonly power = $<HTMLButtonElement>("i-power");
-  private trvButtons: HTMLButtonElement[] = [];
+  private roomButtons: HTMLButtonElement[] = [];
   private insButtons: HTMLButtonElement[] = [];
+  private rows: RadiatorRow[] = [];
 
   constructor(sim: Sim) {
     this.sim = sim;
   }
 
   build(): void {
-    const p = this.sim.params;
+    // Handlers read this.sim at event time: the sim is replaced when the
+    // number of rooms changes.
+    const p = () => this.sim.params;
     this.flow.addEventListener("input", () => {
-      p.flowSet = Number(this.flow.value);
+      p().flowSet = Number(this.flow.value);
       this.sync();
     });
     this.stat.addEventListener("input", () => {
-      p.thermostatSet = Number(this.stat.value);
+      p().thermostatSet = Number(this.stat.value);
       this.sync();
     });
     this.out.addEventListener("input", () => {
-      p.outdoor = Number(this.out.value);
-      this.sync();
-    });
-    this.ls.addEventListener("input", () => {
-      p.radiators[0].lockshield = Number(this.ls.value) / 100;
+      p().outdoor = Number(this.out.value);
       this.sync();
     });
     this.power.addEventListener("click", () => {
-      p.boilerOn = !p.boilerOn;
+      p().boilerOn = !p().boilerOn;
       this.sync();
     });
-
-    this.trvButtons = segmented(
-      $("trv"),
-      TRV_SETTINGS.map((s) => ({
-        label: s.label,
-        title:
-          s.target == null
-            ? "0: shut"
-            : `${s.label === "❄" ? "Frost" : s.label}: about ${s.target} °C`,
+    this.roomButtons = segmented(
+      $("rooms"),
+      Array.from({ length: MAX_ROOMS }, (_, i) => ({
+        label: String(i + 1),
+        title: i === 0 ? "1 room" : `${i + 1} rooms in a row`,
       })),
       (i) => {
-        p.radiators[0].trvIndex = i;
-        this.sync();
+        if (i + 1 !== this.sim.rooms.length) this.onRooms?.(i + 1);
       },
     );
     this.insButtons = segmented(
@@ -123,20 +137,70 @@ export class Controls {
         title: `${INSULATION[k].label}: ${INSULATION[k].summary}`,
       })),
       (i) => {
-        p.insulation = INS_KEYS[i];
+        p().insulation = INS_KEYS[i];
         this.sync();
       },
     );
 
     $("water-scale").style.background = waterGradientCss();
-    this.buildLegend();
     $("table-details").addEventListener("toggle", () => this.updateTable());
+    this.buildRadiators();
+    this.buildLegend();
     this.sync();
+  }
+
+  /** Follow a new sim (another number of rooms). */
+  setSim(sim: Sim): void {
+    this.sim = sim;
+    this.buildRadiators();
+    this.buildLegend();
+    this.sync();
+    this.updateTable();
+  }
+
+  /** One row of TRV buttons and a lockshield slider per radiator. */
+  private buildRadiators(): void {
+    const box = $("radiators");
+    const tpl = $<HTMLTemplateElement>("radiator-row");
+    box.replaceChildren();
+    const n = this.sim.rooms.length;
+    this.rows = this.sim.plan.rooms.map((room, k) => {
+      const row = tpl.content.firstElementChild!.cloneNode(true) as HTMLElement;
+      const q = <T extends Element>(sel: string) => row.querySelector(sel) as T;
+      const name = n === 1 ? "Radiator" : room.name;
+      q<HTMLElement>(".rad-name").textContent = name;
+      // Unique ids so each label points at its own control.
+      const trvLabel = q<HTMLElement>(".trv-label");
+      trvLabel.id = `trv-label-${k}`;
+      const seg = q<HTMLElement>(".seg.trv");
+      seg.setAttribute("aria-labelledby", trvLabel.id);
+      if (n > 1) seg.setAttribute("aria-label", `${name} TRV`);
+      const ls = q<HTMLInputElement>(".i-ls");
+      ls.id = `i-ls-${k}`;
+      q<HTMLLabelElement>(".ctl-ls label").htmlFor = ls.id;
+      if (n > 1) ls.setAttribute("aria-label", `${name} lockshield`);
+      ls.addEventListener("input", () => {
+        this.sim.params.radiators[k].lockshield = Number(ls.value) / 100;
+        this.sync();
+      });
+      const trvButtons = segmented(seg, TRV_ITEMS, (i) => {
+        this.sim.params.radiators[k].trvIndex = i;
+        this.sync();
+      });
+      box.append(row);
+      return {
+        trvButtons,
+        trvOut: q<HTMLOutputElement>(".o-trv"),
+        ls,
+        lsOut: q<HTMLOutputElement>(".o-ls"),
+      };
+    });
   }
 
   private buildLegend(): void {
     const ul = $("chart-legend");
-    for (const s of SERIES) {
+    ul.replaceChildren();
+    for (const s of seriesFor(this.sim.rooms.length)) {
       const li = document.createElement("li");
       const k = document.createElement("span");
       k.className = s.dash ? "key-line dashed" : "key-line";
@@ -183,15 +247,20 @@ export class Controls {
     $("o-flow").textContent = `${p.flowSet} °C`;
     $("o-stat").textContent = p.thermostatOn ? fmtT(p.thermostatSet) : "Off";
     $("o-out").textContent = `${p.outdoor} °C`;
-    const rad = p.radiators[0];
-    this.ls.value = String(Math.round(rad.lockshield * 100));
-    $("o-ls").textContent = `${Math.round(rad.lockshield * 100)}%`;
     $("o-power").textContent = p.boilerOn ? "On" : "Off";
     this.power.setAttribute("aria-checked", String(p.boilerOn));
-    const trv = TRV_SETTINGS[rad.trvIndex];
-    $("o-trv").textContent = trv.target == null ? "shut" : `≈${trv.target} °C`;
-    markChecked(this.trvButtons, rad.trvIndex);
+    markChecked(this.roomButtons, this.sim.rooms.length - 1);
     markChecked(this.insButtons, INS_KEYS.indexOf(p.insulation));
+    this.rows.forEach((row, k) => {
+      const rad = p.radiators[k];
+      const trv = TRV_SETTINGS[rad.trvIndex];
+      row.trvOut.textContent =
+        trv.target == null ? "shut" : `≈${trv.target} °C`;
+      markChecked(row.trvButtons, rad.trvIndex);
+      const pct = Math.round(rad.lockshield * 100);
+      row.ls.value = String(pct);
+      row.lsOut.textContent = `${pct}%`;
+    });
   }
 
   updateTable(): void {
@@ -207,12 +276,17 @@ export class Controls {
       bucket = b;
     }
     rows.reverse();
+    // Same series as the chart: one column per room; the TRV target only
+    // with a single room.
+    const n = this.sim.rooms.length;
+    const roomHeads =
+      n === 1 ? ["Room"] : this.sim.plan.rooms.map((r) => r.name);
     const head = [
       "Time",
-      "Room",
+      ...roomHeads,
       "Outside",
       "Thermostat",
-      "TRV",
+      ...(n === 1 ? ["TRV"] : []),
       "Flow",
       "Return",
       "Boiler",
@@ -229,12 +303,13 @@ export class Controls {
     const tbody = document.createElement("tbody");
     for (const s of rows) {
       const tr = document.createElement("tr");
+      const trv = s.rooms[0]?.trv;
       const cells = [
         clockLabel(s.t),
-        s.rooms[0].T.toFixed(1),
+        ...s.rooms.map((r) => r.T.toFixed(1)),
         s.outdoor.toFixed(0),
         s.thermostat.toFixed(1),
-        s.rooms[0].trv == null ? "shut" : String(s.rooms[0].trv),
+        ...(n === 1 ? [trv == null ? "shut" : String(trv)] : []),
         s.flow.toFixed(1),
         s.ret.toFixed(1),
         s.demand ? `${(s.burner / 1000).toFixed(2)} kW` : "off",

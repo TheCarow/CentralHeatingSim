@@ -117,6 +117,18 @@ export class SceneContext {
   }
 }
 
+/**
+ * Destroy a display tree bottom-up. Each node is destroyed without options:
+ * Pixi then frees a Graphics' own context but leaves the module-level shared
+ * contexts (dots, flames, plugs, snow) alone. (With an options object it
+ * would leak the owned contexts; with `context: true` it would destroy the
+ * shared ones.)
+ */
+export function destroyTree(node: Container): void {
+  for (const child of node.removeChildren()) destroyTree(child);
+  node.destroy();
+}
+
 /** Trace a polyline into a Graphics path (call .stroke() on the result). */
 export const poly = (g: Graphics, pts: Pt[]) => {
   g.moveTo(pts[0].x, pts[0].y);

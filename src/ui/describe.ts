@@ -42,7 +42,12 @@ function flowRow(sim: Sim, i: number): TipRow {
     return { label: "Water flow", value: `${lpm.toFixed(2)} L/min` };
   let why = "pump off";
   if (sim.pumpOn)
-    why = sim.cellInfo(i).role === "bypass" ? "TRV fully open" : "TRV shut";
+    why =
+      sim.cellInfo(i).role !== "bypass"
+        ? "TRV shut"
+        : sim.rooms.length > 1
+          ? "radiators taking all the flow"
+          : "TRV fully open";
   return { label: "Water flow", value: `not moving (${why})` };
 }
 
@@ -64,6 +69,11 @@ export function describe(hit: Hit, sim: Sim): TipContent {
   const k = roomOf(hit);
   const room = sim.rooms[k];
   const radiator = p.radiators[k];
+  const many = sim.rooms.length > 1;
+  const roomName = (r: number) => sim.plan.rooms[r].name;
+  /** " · Room 2" when there is more than one room, else nothing. */
+  const tag = (r: number) => (many ? ` · ${roomName(r)}` : "");
+  const valves = many ? "TRVs" : "TRV";
 
   switch (hit.kind) {
     case "cell": {
@@ -98,7 +108,7 @@ export function describe(hit: Hit, sim: Sim): TipContent {
           };
         case "trvTail":
           return {
-            title: "Through the TRV into the radiator",
+            title: `Through the TRV into the radiator${tag(r)}`,
             ...base,
             rows: [
               flowRow(sim, i),
@@ -110,7 +120,7 @@ export function describe(hit: Hit, sim: Sim): TipContent {
           };
         case "rad":
           return {
-            title: "Radiator water",
+            title: `Radiator water${tag(r)}`,
             ...base,
             rows: [
               {
@@ -129,7 +139,7 @@ export function describe(hit: Hit, sim: Sim): TipContent {
           };
         case "lsTail":
           return {
-            title: "Out of the radiator (lockshield side)",
+            title: `Out of the radiator (lockshield side)${tag(r)}`,
             ...base,
             rows: [flowRow(sim, i)],
           };
@@ -144,7 +154,7 @@ export function describe(hit: Hit, sim: Sim): TipContent {
                 value: `${Math.round((sim.bypassLpm / Math.max(sim.flowLpm, 1e-9)) * 100) || 0}%`,
               },
             ],
-            note: "Water the TRV won't let through goes this way, straight back to the boiler, so the loop keeps circulating.",
+            note: `Water the ${valves} won't let through goes this way, straight back to the boiler, so the loop keeps circulating.`,
           };
         case "ret":
           return {
@@ -155,10 +165,9 @@ export function describe(hit: Hit, sim: Sim): TipContent {
             ...base,
             rows: [
               {
-                label:
-                  info.edge.n === 0
-                    ? "Distance from radiator"
-                    : `Distance from radiator ${info.edge.n + 1}`,
+                label: many
+                  ? `Distance from ${roomName(info.edge.n)} radiator`
+                  : "Distance from radiator",
                 value: metres(info.alongM),
               },
               flowRow(sim, i),
@@ -188,8 +197,7 @@ export function describe(hit: Hit, sim: Sim): TipContent {
             : `${share}% of flow`,
         rows: [
           {
-            label:
-              sim.rooms.length > 1 ? "Through radiators" : "Through radiator",
+            label: many ? "Through radiators" : "Through radiator",
             value: `${sim.radiatorFlowLpm.toFixed(2)} L/min`,
           },
           {
@@ -197,14 +205,14 @@ export function describe(hit: Hit, sim: Sim): TipContent {
             value: `${sim.bypassLpm.toFixed(2)} L/min`,
           },
         ],
-        note: "A spring-loaded valve that opens as the TRV closes, so the pump always has a loop to push water round. Hot water sent straight back raises the return temperature, which can stop the boiler condensing.",
+        note: `A spring-loaded valve that opens as the ${valves} close${many ? "" : "s"}, so the pump always has a loop to push water round. Hot water sent straight back raises the return temperature, which can stop the boiler condensing.`,
       };
     }
 
     case "trv": {
       const trv = TRV_SETTINGS[radiator.trvIndex];
       return {
-        title: "Thermostatic radiator valve",
+        title: `Thermostatic radiator valve${tag(k)}`,
         value: `Setting ${trv.label}`,
         rows: [
           {
@@ -227,7 +235,7 @@ export function describe(hit: Hit, sim: Sim): TipContent {
     case "trv-inset": {
       const trv = TRV_SETTINGS[radiator.trvIndex];
       return {
-        title: "Inside the TRV",
+        title: `Inside the TRV${tag(k)}`,
         value:
           trv.target == null
             ? "Plug on seat (shut)"
@@ -249,7 +257,7 @@ export function describe(hit: Hit, sim: Sim): TipContent {
 
     case "lockshield":
       return {
-        title: "Lockshield valve",
+        title: `Lockshield valve${tag(k)}`,
         value: `${Math.round(radiator.lockshield * 100)}% open`,
         rows: [
           { label: "Purpose", value: "balancing" },
@@ -263,6 +271,9 @@ export function describe(hit: Hit, sim: Sim): TipContent {
         title: "Room thermostat",
         value: t1(sim.thermostatT),
         rows: [
+          ...(many
+            ? [{ label: "Hangs in", value: roomName(sim.thermostatRoom) }]
+            : []),
           { label: "Heating", value: p.thermostatOn ? "on" : "switched off" },
           { label: "Set to", value: t1(p.thermostatSet) },
           {
@@ -427,8 +438,9 @@ export function describe(hit: Hit, sim: Sim): TipContent {
     case "room": {
       const exp = sim.expectedRoomTemp(k);
       const rate = sim.roomRatePerHour(k);
+      const hasStat = k === sim.thermostatRoom;
       return {
-        title: "Room air",
+        title: many ? `${roomName(k)} air` : "Room air",
         value: t1(room.T),
         rows: [
           {
@@ -436,12 +448,29 @@ export function describe(hit: Hit, sim: Sim): TipContent {
             value: watts(room.radW + room.pipeW),
           },
           { label: "Heat out (fabric)", value: watts(room.lossW) },
+          ...(many
+            ? [
+                {
+                  label:
+                    room.partitionW >= 0
+                      ? "Lost to rooms next door"
+                      : "Gained from rooms next door",
+                  value: watts(Math.abs(room.partitionW)),
+                },
+              ]
+            : []),
           {
             label: "Trend",
             value: `${rate >= 0 ? "+" : ""}${rate.toFixed(2)} °C/h`,
           },
-          { label: "Should settle near", value: t1(exp.t) },
+          {
+            label: hasStat ? "Should settle near" : "Could reach (boiler on)",
+            value: t1(exp.t),
+          },
         ],
+        note: hasStat
+          ? undefined
+          : `The thermostat is in ${roomName(sim.thermostatRoom)}. Once that room is warm enough the boiler stops, and this room stops warming too.`,
       };
     }
   }

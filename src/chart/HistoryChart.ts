@@ -16,70 +16,91 @@ import { cssToHex } from "../scene/colors";
 import type { Tooltip } from "../ui/tooltip";
 import type { TipRow } from "../ui/describe";
 
-type SeriesKey = "room" | "outdoor" | "thermostat" | "trv" | "flow" | "ret";
-
 interface SeriesDef {
-  key: SeriesKey;
+  id: string;
   panel: 0 | 1;
   name: string;
   short: string;
   colorVar: string;
   width: number;
   dash?: [number, number];
+  get: (s: HistorySample) => number | null;
 }
 
-export const SERIES: readonly SeriesDef[] = [
-  {
-    key: "room",
+/** Room line colours, in order (validated with the outside line, both modes). */
+const ROOM_COLORS = ["--series-room", "--series-room-2", "--series-room-3"];
+
+/**
+ * The lines to draw for a house with `rooms` rooms. A room keeps its colour
+ * whatever the room count. With more than one room the TRV targets are left
+ * to the tooltip, so the room panel stays readable.
+ */
+export function seriesFor(rooms: number): SeriesDef[] {
+  const one = rooms === 1;
+  const roomLines: SeriesDef[] = Array.from({ length: rooms }, (_, k) => ({
+    id: `room${k}`,
     panel: 0,
-    name: "Room air",
-    short: "Room",
-    colorVar: "--series-room",
+    name: one ? "Room air" : `Room ${k + 1}`,
+    short: one ? "Room" : `Room ${k + 1}`,
+    colorVar: ROOM_COLORS[k],
     width: 2,
-  },
-  {
-    key: "outdoor",
-    panel: 0,
-    name: "Outside",
-    short: "Outside",
-    colorVar: "--series-outdoor",
-    width: 2,
-  },
-  {
-    key: "thermostat",
-    panel: 0,
-    name: "Thermostat set",
-    short: "Stat",
-    colorVar: "--ref-strong",
-    width: 1.5,
-    dash: [6, 4],
-  },
-  {
-    key: "trv",
-    panel: 0,
-    name: "TRV target",
-    short: "TRV",
-    colorVar: "--ref-muted",
-    width: 1.5,
-    dash: [2, 3],
-  },
-  {
-    key: "flow",
-    panel: 1,
-    name: "Flow",
-    short: "Flow",
-    colorVar: "--series-flow",
-    width: 2,
-  },
-  {
-    key: "ret",
-    panel: 1,
-    name: "Return",
-    short: "Return",
-    colorVar: "--series-return",
-    width: 2,
-  },
-];
+    get: (s) => s.rooms[k]?.T ?? null,
+  }));
+  return [
+    ...roomLines,
+    {
+      id: "outdoor",
+      panel: 0,
+      name: "Outside",
+      short: "Outside",
+      colorVar: "--series-outdoor",
+      width: 2,
+      get: (s) => s.outdoor,
+    },
+    {
+      id: "thermostat",
+      panel: 0,
+      name: "Thermostat set",
+      short: "Stat",
+      colorVar: "--ref-strong",
+      width: 1.5,
+      dash: [6, 4],
+      get: (s) => s.thermostat,
+    },
+    ...(one
+      ? [
+          {
+            id: "trv",
+            panel: 0,
+            name: "TRV target",
+            short: "TRV",
+            colorVar: "--ref-muted",
+            width: 1.5,
+            dash: [2, 3],
+            get: (s: HistorySample) => s.rooms[0]?.trv ?? null,
+          } satisfies SeriesDef,
+        ]
+      : []),
+    {
+      id: "flow",
+      panel: 1,
+      name: "Flow",
+      short: "Flow",
+      colorVar: "--series-flow",
+      width: 2,
+      get: (s) => s.flow,
+    },
+    {
+      id: "ret",
+      panel: 1,
+      name: "Return",
+      short: "Return",
+      colorVar: "--series-return",
+      width: 2,
+      get: (s) => s.ret,
+    },
+  ];
+}
 
 const WINDOW_S = 6 * 3600;
 const FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
@@ -102,26 +123,10 @@ export function clockLabel(t: number): string {
   return day > 1 ? `D${day} ${hh}:${mm}` : `${hh}:${mm}`;
 }
 
-function value(s: HistorySample, key: SeriesKey): number | null {
-  switch (key) {
-    case "room":
-      return s.rooms[0].T;
-    case "outdoor":
-      return s.outdoor;
-    case "thermostat":
-      return s.thermostat;
-    case "trv":
-      return s.rooms[0].trv;
-    case "flow":
-      return s.flow;
-    case "ret":
-      return s.ret;
-  }
-}
-
 export class HistoryChart {
   readonly app = new Application();
-  private readonly sim: Sim;
+  private sim: Sim;
+  private series: readonly SeriesDef[];
   private readonly tooltip: Tooltip;
   private readonly g = new Graphics();
   private readonly cross = new Graphics();
@@ -139,6 +144,7 @@ export class HistoryChart {
 
   constructor(sim: Sim, tooltip: Tooltip) {
     this.sim = sim;
+    this.series = seriesFor(sim.rooms.length);
     this.tooltip = tooltip;
     this.pools = {
       axis: {
@@ -216,10 +222,19 @@ export class HistoryChart {
     );
   }
 
+  /** Chart a different house (another number of rooms). */
+  setSim(sim: Sim): void {
+    this.sim = sim;
+    this.series = seriesFor(sim.rooms.length);
+    if (!this.app.renderer) return; // not opened yet
+    this.readTheme();
+    this.render();
+  }
+
   private readTheme(): void {
     const cs = getComputedStyle(document.documentElement);
     const get = (v: string) => cssToHex(cs.getPropertyValue(v));
-    for (const s of SERIES) this.colors[s.colorVar] = get(s.colorVar);
+    for (const s of this.series) this.colors[s.colorVar] = get(s.colorVar);
     for (const v of [
       "--grid",
       "--baseline",
@@ -295,9 +310,9 @@ export class HistoryChart {
       let mn = Infinity;
       let mx = -Infinity;
       for (const s of data)
-        for (const def of SERIES) {
+        for (const def of this.series) {
           if (def.panel !== panel) continue;
-          const v = value(s, def.key);
+          const v = def.get(s);
           if (v == null) continue;
           mn = Math.min(mn, v);
           mx = Math.max(mx, v);
@@ -365,7 +380,7 @@ export class HistoryChart {
     }
 
     // series
-    for (const def of SERIES) {
+    for (const def of this.series) {
       const panel = this.panels[def.panel];
       const color = c[def.colorVar];
       let seg: { x: number; y: number }[] = [];
@@ -380,7 +395,7 @@ export class HistoryChart {
         seg = [];
       };
       for (const s of data) {
-        const v = value(s, def.key);
+        const v = def.get(s);
         if (v == null) {
           flush();
           continue;
@@ -396,8 +411,9 @@ export class HistoryChart {
     const xEnd = this.xOf(last.t);
     for (const pi of [0, 1] as const) {
       const panel = this.panels[pi];
-      const items = SERIES.filter((d) => d.panel === pi)
-        .map((d) => ({ d, v: value(last, d.key) }))
+      const items = this.series
+        .filter((d) => d.panel === pi)
+        .map((d) => ({ d, v: d.get(last) }))
         .filter((i): i is { d: SeriesDef; v: number } => i.v != null)
         .map((i) => ({ ...i, y: this.yOf(panel, i.v) }))
         .sort((a, b) => a.y - b.y);
@@ -487,8 +503,8 @@ export class HistoryChart {
     g.stroke({ width: 1, color: c["--text-secondary"], alpha: 0.6 });
 
     const rows: TipRow[] = [];
-    for (const def of SERIES) {
-      const v = value(s, def.key);
+    for (const def of this.series) {
+      const v = def.get(s);
       const css = "#" + c[def.colorVar].toString(16).padStart(6, "0");
       rows.push({
         label: def.name,

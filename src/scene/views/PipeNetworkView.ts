@@ -1,7 +1,8 @@
 /*
  * The water pipes: casings, the water inside (one tinted piece per model
- * cell), the flow dots, the valve bodies the tails run through, and the
- * automatic bypass valve.
+ * cell), the flow dots, the valve bodies the tails run through, the
+ * automatic bypass valve, and the places where one pipe passes in front of
+ * another.
  */
 import { Graphics, GraphicsContext, type Text } from "pixi.js";
 import { PIPE, type Edge } from "../../sim/circuit";
@@ -20,6 +21,12 @@ import { pathFor } from "../layout";
 
 const DOT_GAP = 16; // same spacing on every pipe
 const HALF = 4; // half the water stroke width
+const CASING = 13; // pipe casing stroke width
+const CASING_COLOR = 0x36312c;
+
+const dotCtx = new GraphicsContext()
+  .circle(0, 0, 1.3)
+  .fill({ color: 0xffffff, alpha: 0.45 });
 
 /** Wrap a phase difference into (-gap/2, gap/2]. */
 const wrapPhase = (d: number) => d - DOT_GAP * Math.round(d / DOT_GAP);
@@ -61,6 +68,9 @@ export class PipeNetworkView implements View {
   private readonly scratch: Pt = { x: 0, y: 0 }; // reused per-frame point
   private readonly ring = new Graphics();
   private readonly abvLabel: Text;
+  /** Where a pipe crosses in front of another: its cell and water patch. */
+  private readonly overpasses: { at: Pt; cell: number; water: Graphics }[] = [];
+  private overpassColors: Int32Array = new Int32Array(0);
 
   constructor(ctx: SceneContext) {
     this.ctx = ctx;
@@ -83,8 +93,8 @@ export class PipeNetworkView implements View {
       const p = path(e);
       if (!p) continue;
       poly(casing, p.pts).stroke({
-        width: 13,
-        color: 0x36312c,
+        width: CASING,
+        color: CASING_COLOR,
         cap: "round",
         join: "round",
       });
@@ -122,6 +132,7 @@ export class PipeNetworkView implements View {
     this.colors = new Int32Array(this.cells.length).fill(-1);
 
     this.buildDots();
+    this.buildOverpasses();
 
     // Automatic bypass valve: spring-loaded, opens as the TRVs close.
     const { x, y } = lay.bypass.valve;
@@ -214,9 +225,6 @@ export class PipeNetworkView implements View {
     const c = sim.circuit;
     const P = lay.pipes;
     const n = lay.rooms.length;
-    const dotCtx = new GraphicsContext()
-      .circle(0, 0, 1.3)
-      .fill({ color: 0xffffff, alpha: 0.45 });
     const group = (
       paths: { path: Polyline; u: number }[],
       lpm: () => number,
@@ -276,6 +284,38 @@ export class PipeNetworkView implements View {
     group([{ path: P.bypass, u: uBypass }], () => sim.bypassLpm, main);
   }
 
+  /**
+   * Where a pipe passes in front of another (a lockshield drop over the flow
+   * main), cover the pipe behind with a short piece of the front pipe's
+   * casing and water, so the two read as crossing, not joined. Drawn above
+   * the flow dots, so the dots behind disappear under the crossing too.
+   */
+  private buildOverpasses(): void {
+    const { sim, lay, layers } = this.ctx;
+    const c = sim.circuit;
+    const reach = CASING / 2 + 2; // past both edges of the pipe behind
+    for (const x of lay.crossings) {
+      const e = c.edge(x.front.role, x.front.n);
+      let cell = e.first;
+      let best = Infinity;
+      for (let i = e.first; i <= e.last; i++) {
+        const d = distToPolyline(x.at, this.pipeCells.get(i)!);
+        if (d < best) [best, cell] = [d, i];
+      }
+      // The front pipe is vertical (layout.findCrossings).
+      const { x: px, y: py } = x.at;
+      const casing = new Graphics()
+        .rect(px - CASING / 2, py - reach, CASING, 2 * reach)
+        .fill(CASING_COLOR);
+      const water = new Graphics()
+        .rect(px - HALF, py - reach, 2 * HALF, 2 * reach)
+        .fill(0xffffff);
+      layers.pipes.addChild(casing, water);
+      this.overpasses.push({ at: x.at, cell, water });
+    }
+    this.overpassColors = new Int32Array(this.overpasses.length).fill(-1);
+  }
+
   update(f: Frame): void {
     const sim = this.ctx.sim;
     const { dt, speed } = f;
@@ -286,6 +326,13 @@ export class PipeNetworkView implements View {
         this.water[j].tint = col;
       }
     }
+    this.overpasses.forEach((o, j) => {
+      const col = waterColor(sim.T[o.cell]);
+      if (col !== this.overpassColors[j]) {
+        this.overpassColors[j] = col;
+        o.water.tint = col;
+      }
+    });
 
     // Pump speed sets the pace (capped so it stays watchable); each branch
     // moves in proportion to the share of the flow it carries.
@@ -333,6 +380,10 @@ export class PipeNetworkView implements View {
     if (pass === "device") {
       if (inRect(p, this.ctx.lay.bypass.box)) return { kind: "bypass-valve" };
     } else if (pass === "water") {
+      // At a crossing, the pipe in front is the one under the pointer.
+      for (const o of this.overpasses)
+        if (Math.abs(p.x - o.at.x) <= 7 && Math.abs(p.y - o.at.y) <= 7)
+          return { kind: "cell", cell: o.cell };
       let best = 9.5;
       let cell = -1;
       for (const [i, pts] of this.pipeCells) {

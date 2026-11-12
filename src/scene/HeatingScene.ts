@@ -15,6 +15,7 @@ import type { Sim } from "../sim/model";
 import {
   HIT_PASSES,
   SceneContext,
+  destroyTree,
   makeLayers,
   type Frame,
   type View,
@@ -41,9 +42,10 @@ export class HeatingScene {
   onHover?: (hit: Hit | null, clientX: number, clientY: number) => void;
   onAdjust?: (hit: Hit, dir: 1 | -1, source: "click" | "wheel") => void;
 
-  private readonly sim: Sim;
+  private sim: Sim;
   /** Where everything sits, from the house plan. */
-  private readonly lay: HouseLayout;
+  private lay: HouseLayout;
+  private el!: HTMLElement;
   private readonly world = new Container();
   private ctx!: SceneContext;
   /** Views in drawing order; hit-testing asks them in this order too. */
@@ -57,6 +59,7 @@ export class HeatingScene {
   }
 
   async init(el: HTMLElement): Promise<void> {
+    this.el = el;
     await this.app.init({
       resizeTo: el,
       background: 0xf1ede5,
@@ -73,10 +76,6 @@ export class HeatingScene {
     });
     el.appendChild(this.app.canvas);
     this.app.canvas.setAttribute("role", "img");
-    this.app.canvas.setAttribute(
-      "aria-label",
-      "Cut-away of a room heated by a combi boiler: pipes, radiator with TRV, room thermostat and external wall.",
-    );
     this.app.stage.addChild(this.world);
     this.build();
 
@@ -84,6 +83,19 @@ export class HeatingScene {
     this.app.renderer.on("resize", (w: number, h: number) => this.layout(w, h));
     this.layout(this.app.screen.width, this.app.screen.height);
     this.setupInput();
+  }
+
+  /**
+   * Show a different house (e.g. another number of rooms): throw away every
+   * view and build them again for the new sim and its layout.
+   */
+  setSim(sim: Sim): void {
+    this.sim = sim;
+    this.lay = computeLayout(sim.plan);
+    for (const layer of this.world.removeChildren()) destroyTree(layer);
+    this.build();
+    this.layout(this.app.screen.width, this.app.screen.height);
+    this.setHover(null, 0, 0);
   }
 
   /** Create the drawing layers and every view, back to front. */
@@ -100,6 +112,14 @@ export class HeatingScene {
       new ThermostatView(ctx),
       new LossArrowsView(ctx, fabric),
     ];
+    // The canvas takes the drawing's shape, so wider houses get a shorter
+    // canvas rather than empty bands above and below.
+    this.el.style.aspectRatio = `${this.lay.W} / ${this.lay.H}`;
+    const n = this.lay.rooms.length;
+    this.app.canvas.setAttribute(
+      "aria-label",
+      `Cut-away of ${n === 1 ? "a room" : `${n} rooms`} heated by a combi boiler: pipes, ${n === 1 ? "radiator" : "radiators"} with TRV and lockshield, room thermostat and external wall.`,
+    );
   }
 
   // ---------------------------------------------------------------------------

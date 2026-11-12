@@ -1,7 +1,7 @@
 # Combi Heating Simulator
 
-An educational simulation of one room heated by a combi boiler, drawn with
-[PixiJS 8](https://pixijs.com/) (Vite + TypeScript template).
+An educational simulation of one to three rooms heated by a combi boiler,
+drawn with [PixiJS 8](https://pixijs.com/) (Vite + TypeScript template).
 
 ## Run
 
@@ -20,19 +20,26 @@ recorded values (`tests/golden/sim-baseline.json`). Re-record it with
 
 | Control | Where |
 |---|---|
+| Rooms (1–3, in a row) | buttons; changing it cold-starts the house |
 | Boiler on/off | switch, or the green power button on the boiler |
 | Boiler flow temperature (30–80 °C) | slider, or click/scroll the boiler |
 | Room thermostat (5–30 °C) | slider, or scroll the thermostat; click it to switch heating on/off |
-| Lockshield (10–100 %, 10 % steps) | slider, or click/scroll the lockshield |
-| TRV head setting (0, ❄, 1–5) | buttons, or click/scroll the TRV or its cut-away |
+| Lockshield (10–100 %, 10 % steps), per radiator | slider in that radiator's row, or click/scroll the lockshield |
+| TRV head setting (0, ❄, 1–5), per radiator | buttons in that radiator's row, or click/scroll the TRV |
 | Insulation (Poor → Excellent) | buttons |
 | Outside temperature (−15–25 °C) | slider, or click/scroll the outside area |
 
 Shift+click turns a device down. Hover anything in the diagram for live
 details. Pipe colour runs blue (10 °C) to red (80 °C).
 
-**Cold start** restarts with the room, water and pipes all at the outside
-temperature. **Reset** restarts with everything at 14 °C.
+**Cold start** restarts with the rooms, water and pipes all at the outside
+temperature. **Reset** restarts with everything at 14 °C. Changing the number
+of rooms keeps the whole-house settings and the settings of radiators that are
+still there, and cold-starts the new house.
+
+With more than one room the thermostat hangs in room 1. The other rooms are
+controlled only by their TRVs, so they stop warming whenever room 1 is warm
+enough and the boiler switches off. Their tooltips say so.
 
 ## The model (`src/sim/`)
 
@@ -62,8 +69,15 @@ temperature. **Reset** restarts with everything at 14 °C.
   wall between them. The thermostat hangs in the first room.
 
 Simplifications: no minimum burner output (so no short-cycling), no hot-water
-draw-off, and one radiator per room. The diagram currently shows one room;
-the simulation already supports up to three.
+draw-off, and one radiator per room. A room's "could reach" estimate ignores
+heat traded with its neighbours.
+
+## Drawing
+
+One room fills a 1200 × 700 drawing. With two or three rooms they share a
+drawing about 1500 wide, so each room is narrower, and the canvas takes the
+drawing's shape. Each lockshield drop except the last crosses the flow main;
+it is drawn passing in front, so the two pipes don't look joined.
 
 ## Layout
 

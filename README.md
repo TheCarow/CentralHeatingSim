@@ -3,7 +3,7 @@
 An educational simulation of one to three rooms heated by a combi boiler,
 drawn with [PixiJS 8](https://pixijs.com/) (Vite + TypeScript template).
 
-**Try it:** <https://thecarow.github.io/CentralHeatingSim/>
+**Try it:** <https://thecarow.com/CentralHeatingSim/>
 
 ## Run
 

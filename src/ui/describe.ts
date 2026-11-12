@@ -5,7 +5,7 @@ import { roomOf, type Hit } from "../scene/hit";
 import { K, TRV_SETTINGS, type Sim, type SimStatus } from "../sim/model";
 import type { CellInfo } from "../sim/circuit";
 import { toCss, waterColor } from "../scene/colors";
-import { DAY_NIGHT, hourOfDay } from "../sim/weather";
+import { DAY_NIGHT, formatTimeOfDay } from "../sim/weather";
 
 export interface TipRow {
   label: string;
@@ -408,8 +408,7 @@ export function describe(hit: Hit, sim: Sim): TipContent {
         },
       ];
       if (p.dayNight) {
-        const h = hourOfDay(sim.time);
-        const clock = `${String(Math.floor(h)).padStart(2, "0")}:${String(Math.floor((h % 1) * 60)).padStart(2, "0")}`;
+        const clock = formatTimeOfDay(sim.time);
         rows.unshift(
           { label: "Time of day", value: clock },
           { label: "Daily average", value: t1(p.outdoor) },

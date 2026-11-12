@@ -13,8 +13,13 @@ export const DAY_NIGHT = {
   warmestHour: 15, // and so coldest 12 hours earlier, at 3 am
 } as const;
 
-/** Hour of the day (0..24) at sim time t (seconds since day 1, 00:00). */
-export const hourOfDay = (t: number) => (((t % DAY_S) + DAY_S) % DAY_S) / 3600;
+/** Time of day at sim time t as "hh:mm", or "hh:mm:ss" with seconds. */
+export function formatTimeOfDay(t: number, withSeconds = false): string {
+  const s = Math.floor(((t % DAY_S) + DAY_S) % DAY_S);
+  const two = (n: number) => String(n).padStart(2, "0");
+  const hhmm = `${two(Math.floor(s / 3600))}:${two(Math.floor((s % 3600) / 60))}`;
+  return withSeconds ? `${hhmm}:${two(s % 60)}` : hhmm;
+}
 
 /** Outside temperature at sim time t. */
 export function outdoorAt(

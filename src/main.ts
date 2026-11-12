@@ -3,11 +3,12 @@ import { makePlan } from "./house/plan";
 import { Sim } from "./sim/model";
 import { HeatingScene } from "./scene/HeatingScene";
 import type { Hit } from "./scene/hit";
-import { HistoryChart, clockLabel } from "./chart/HistoryChart";
+import { HistoryChart } from "./chart/HistoryChart";
 import { Tooltip } from "./ui/tooltip";
 import { describe } from "./ui/describe";
 import { Controls } from "./ui/controls";
 import { playbackIcon } from "./ui/playbackIcon";
+import { formatTimeOfDay } from "./sim/weather";
 
 const SPEEDS = [1, 20, 60, 600] as const;
 const DEFAULT_SPEED = 20;
@@ -211,7 +212,9 @@ const DEFAULT_SPEED = 20;
       uiTimer = 0;
       // The clock only matters while the outside follows the time of day.
       clock.hidden = !sim.params.dayNight;
-      if (!clock.hidden) clock.textContent = clockLabel(sim.time % 86400); // time of day only
+      // At real time the minutes barely move, so show the seconds ticking.
+      if (!clock.hidden)
+        clock.textContent = formatTimeOfDay(sim.time, speed === 1);
     }
     if (chartTimer >= 0.5) {
       chartTimer = 0;

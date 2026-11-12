@@ -5,7 +5,13 @@
 import { describe, expect, it } from "vitest";
 import { makePlan } from "../src/house/plan";
 import { Sim } from "../src/sim/model";
-import { DAY_NIGHT, DAY_S, daylight, outdoorAt } from "../src/sim/weather";
+import {
+  DAY_NIGHT,
+  DAY_S,
+  daylight,
+  formatTimeOfDay,
+  outdoorAt,
+} from "../src/sim/weather";
 
 const at = (hour: number, day = 0) => day * DAY_S + hour * 3600;
 
@@ -29,6 +35,15 @@ describe("outside temperature over the day", () => {
     expect(daylight(at(0))).toBe(0);
     expect(daylight(at(6))).toBeCloseTo(0.5, 9);
     expect(daylight(at(18))).toBeCloseTo(0.5, 9);
+  });
+});
+
+describe("the clock", () => {
+  it("shows the time of day, with seconds when asked", () => {
+    expect(formatTimeOfDay(at(6))).toBe("06:00");
+    expect(formatTimeOfDay(at(2.2, 1))).toBe("02:12"); // next day: no day count
+    expect(formatTimeOfDay(at(6) + 7, true)).toBe("06:00:07");
+    expect(formatTimeOfDay(at(23) + 59 * 60 + 59.9, true)).toBe("23:59:59");
   });
 });
 

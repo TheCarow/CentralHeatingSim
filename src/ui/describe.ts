@@ -29,7 +29,7 @@ const metres = (m: number) => `${m.toFixed(1)} m`;
 const STATUS_TEXT: Record<SimStatus, string> = {
   standby: "standby",
   overrun: "pump overrun",
-  bypass: "radiator valves shut, water going round the bypass",
+  bypass: "radiator valves shut, water only going round the bypass pipes",
   heating: "heating",
   idle: "at temperature",
   off: "switched off",
@@ -40,21 +40,14 @@ function flowRow(sim: Sim, i: number): TipRow {
   const lpm = sim.cellFlowLpm(i);
   if (lpm > 0.01)
     return { label: "Water flow", value: `${lpm.toFixed(2)} L/min` };
-  let why = "pump off";
-  if (sim.pumpOn)
-    why =
-      sim.cellInfo(i).role !== "bypass"
-        ? "TRV shut"
-        : sim.rooms.length > 1
-          ? "radiators taking all the flow"
-          : "TRV fully open";
+  const why = sim.pumpOn ? "TRV shut" : "pump off";
   return { label: "Water flow", value: `not moving (${why})` };
 }
 
-/** Distance along the flow main from the boiler to the centre of a cell. */
-function fromBoilerM(sim: Sim, info: CellInfo): number {
-  let d = info.alongM;
-  for (let j = 0; j < info.edge.n; j++) d += sim.circuit.flowMain[j].lenM;
+/** Distance still to go along the return to the boiler, from a cell's centre. */
+function toBoilerM(sim: Sim, info: CellInfo): number {
+  let d = info.edge.lenM - info.alongM;
+  for (let j = 0; j < info.edge.n; j++) d += sim.circuit.ret[j].lenM;
   return d;
 }
 
@@ -73,7 +66,6 @@ export function describe(hit: Hit, sim: Sim): TipContent {
   const roomName = (r: number) => sim.plan.rooms[r].name;
   /** " · Room 2" when there is more than one room, else nothing. */
   const tag = (r: number) => (many ? ` · ${roomName(r)}` : "");
-  const valves = many ? "TRVs" : "TRV";
 
   switch (hit.kind) {
     case "cell": {
@@ -99,10 +91,7 @@ export function describe(hit: Hit, sim: Sim): TipContent {
             title: "Flow pipe (from boiler)",
             ...base,
             rows: [
-              {
-                label: "Distance from boiler",
-                value: metres(fromBoilerM(sim, info)),
-              },
+              { label: "Distance from boiler", value: metres(info.alongM) },
               flowRow(sim, i),
             ],
           };
@@ -143,32 +132,43 @@ export function describe(hit: Hit, sim: Sim): TipContent {
             ...base,
             rows: [flowRow(sim, i)],
           };
-        case "bypass":
+        case "bypass": {
+          const share = sim.flowLpm > 0.01 ? sim.bypassLpm(r) / sim.flowLpm : 0;
           return {
-            title: "Bypass pipe",
+            title: `Bypass pipe${tag(r)}`,
             ...base,
             rows: [
               flowRow(sim, i),
               {
-                label: "Share of pump flow",
-                value: `${Math.round((sim.bypassLpm / Math.max(sim.flowLpm, 1e-9)) * 100) || 0}%`,
+                label: "Through the radiator",
+                value: `${sim.radFlowLpm(r).toFixed(2)} L/min`,
+              },
+              {
+                label: "Share going round",
+                value: `${Math.round(share * 100)}%`,
               },
             ],
-            note: `Water the ${valves} won't let through goes this way, straight back to the boiler, so the loop keeps circulating.`,
+            note: `An open pipe under the radiator. Water the radiator doesn't take goes round it and on, so closing ${many ? "TRVs" : "the TRV"} never stops the loop. Some always takes this short cut, even with the TRV fully open, so ${many ? "the radiators further on get cooler water and " : ""}the water returning to the boiler is hotter.`,
+          };
+        }
+        case "link":
+          return {
+            title: `On to the next radiator${tag(info.edge.n + 1)}`,
+            ...base,
+            rows: [flowRow(sim, i)],
+            note: "Water from the radiator and its bypass, mixed, goes on to the next radiator.",
           };
         case "ret":
           return {
             title:
-              i === circuit.returnMain[0].last
+              i === circuit.ret[0].last
                 ? "Return into boiler"
                 : "Return pipe (to boiler)",
             ...base,
             rows: [
               {
-                label: many
-                  ? `Distance from ${roomName(info.edge.n)} radiator`
-                  : "Distance from radiator",
-                value: metres(info.alongM),
+                label: "Distance to boiler",
+                value: metres(toBoilerM(sim, info)),
               },
               flowRow(sim, i),
               {
@@ -181,32 +181,6 @@ export function describe(hit: Hit, sim: Sim): TipContent {
           };
       }
       break;
-    }
-
-    case "bypass-valve": {
-      const share =
-        sim.flowLpm > 0.01
-          ? Math.round((sim.bypassLpm / sim.flowLpm) * 100)
-          : 0;
-      return {
-        title: "Automatic bypass valve",
-        value: !sim.pumpOn
-          ? "Pump off"
-          : share < 1
-            ? "Closed"
-            : `${share}% of flow`,
-        rows: [
-          {
-            label: many ? "Through radiators" : "Through radiator",
-            value: `${sim.radiatorFlowLpm.toFixed(2)} L/min`,
-          },
-          {
-            label: "Through bypass",
-            value: `${sim.bypassLpm.toFixed(2)} L/min`,
-          },
-        ],
-        note: `A spring-loaded valve that opens as the ${valves} close${many ? "" : "s"}, so the pump always has a loop to push water round. Hot water sent straight back raises the return temperature, which can stop the boiler condensing.`,
-      };
     }
 
     case "trv": {

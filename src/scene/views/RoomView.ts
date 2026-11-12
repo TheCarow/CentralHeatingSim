@@ -168,25 +168,15 @@ export class RoomView implements View {
     });
     this.lsLabel.visible = false; // appears only while the lockshield is hovered
 
-    // Rooms without the thermostat show their temperature on the wall, styled
-    // like the outside reading and level with the thermostat's.
-    if (index !== sim.thermostatRoom) {
-      const at = rl.reading;
-      ctx.label(sim.plan.rooms[index].name.toUpperCase(), at.x, at.y - 13, {
-        size: 11,
-        weight: "600",
-        color: MUTED,
-        ax: 0.5,
-        ay: 1,
-        spacing: 1,
-      });
-      this.reading = ctx.label("", at.x, at.y, {
+    // Rooms without the thermostat show their temperature on the wall,
+    // level with the thermostat's reading.
+    if (index !== sim.thermostatRoom)
+      this.reading = ctx.label("", rl.reading.x, rl.reading.y, {
         size: 20,
         weight: "700",
         ax: 0.5,
         ay: 0.5,
       });
-    }
 
     // Hover highlight for a radiator layer.
     this.layerBox

@@ -7,9 +7,11 @@
  * branches merge, so the solver in model.ts works on any plan without knowing
  * its shape.
  *
- * Cell order: heat exchanger, flow main [0], then for each radiator k its TRV
- * tail, radiator and lockshield tail followed by flow main [k+1]; then the
- * bypass and the return main from the far end back to the boiler.
+ * The plan is a one-pipe loop (see house/plan.ts). Cell order: heat
+ * exchanger, flow pipe, then for each radiator k its TRV tail, radiator,
+ * lockshield tail and bypass, followed by the link to radiator k+1; then the
+ * return, from the far end back to the boiler. Every cell comes after the
+ * cells that feed it, so one pass in cell order follows the water.
  */
 import type { HousePlan, PipeSpec } from "../house/plan";
 
@@ -36,12 +38,15 @@ export const Kind = { HX: 0, PIPE: 1, RAD: 2 } as const;
 
 /** What part of the circuit an edge is. */
 export type EdgeRole =
-  "hx" | "flow" | "trvTail" | "rad" | "lsTail" | "bypass" | "ret";
+  "hx" | "flow" | "trvTail" | "rad" | "lsTail" | "bypass" | "link" | "ret";
 
 export interface Edge {
   id: number;
   role: EdgeRole;
-  /** Radiator index for trvTail / rad / lsTail; main index for flow / ret; else 0. */
+  /**
+   * Radiator index for trvTail / rad / lsTail / bypass; for a link, the
+   * radiator it leaves; for the return, the room it runs under; else 0.
+   */
   n: number;
   /** Room whose air this edge gives its heat to. */
   room: number;
@@ -57,7 +62,7 @@ export interface CellInfo {
   edge: Edge;
   role: EdgeRole;
   room: number;
-  /** Radiator the cell belongs to, or -1 for mains, bypass and boiler. */
+  /** Radiator the cell belongs to (its tails, panel and bypass), or -1. */
   radiator: number;
   /** Position of the cell within its edge, 0 = upstream end. */
   index: number;
@@ -65,20 +70,22 @@ export interface CellInfo {
   alongM: number;
 }
 
+/** The pipes at one radiator: through the radiator, or round its bypass. */
 export interface RadiatorEdges {
   trvTail: Edge;
   rad: Edge;
   lsTail: Edge;
+  bypass: Edge;
 }
 
 export class Circuit {
   readonly N: number; // cells
   readonly edges: Edge[] = [];
   readonly hx: number; // heat-exchanger cell
-  readonly flowMain: Edge[] = [];
-  readonly returnMain: Edge[] = [];
+  readonly flow: Edge;
+  readonly links: Edge[] = [];
+  readonly ret: Edge[] = []; // [k] runs under room k; [0] reaches the boiler
   readonly radiators: RadiatorEdges[] = [];
-  readonly bypass: Edge;
 
   readonly edgeOf: Uint8Array;
   readonly kind: Uint8Array;
@@ -125,29 +132,31 @@ export class Circuit {
       this.edges.push(e);
       return e;
     };
-    const pipe = (role: EdgeRole, idx: number, room: number, p: PipeSpec) =>
-      add(role, idx, room, p.cells, p.lenM);
+    const pipe = (
+      role: EdgeRole,
+      idx: number,
+      room: number,
+      p: PipeSpec,
+      merge = false,
+    ) => add(role, idx, room, p.cells, p.lenM, merge);
 
     const hxEdge = add("hx", 0, 0, 1, 0);
     this.hx = hxEdge.first;
-    this.flowMain.push(pipe("flow", 0, 0, plan.flowMain[0]));
+    this.flow = pipe("flow", 0, 0, plan.flow);
     for (let k = 0; k < R; k++) {
       const rad = plan.rooms[k].radiator;
       this.radiators.push({
         trvTail: pipe("trvTail", k, k, plan.tail),
         rad: add("rad", k, k, rad.layers, 0),
         lsTail: pipe("lsTail", k, k, plan.tail),
+        bypass: pipe("bypass", k, k, plan.bypass),
       });
+      // Radiator and bypass rejoin, and the water goes on to the next room.
       if (k < last)
-        this.flowMain.push(pipe("flow", k + 1, k + 1, plan.flowMain[k + 1]));
+        this.links.push(pipe("link", k, k + 1, plan.links[k], true));
     }
-    this.bypass = pipe("bypass", 0, last, plan.bypass);
-    const ret: Edge[] = [];
-    for (let k = last; k >= 0; k--) {
-      const p = plan.returnMain[k];
-      ret[k] = add("ret", k, k, p.cells, p.lenM, true);
-    }
-    this.returnMain.push(...ret);
+    for (let k = last; k >= 0; k--)
+      this.ret[k] = pipe("ret", k, k, plan.ret[k], k === last);
     this.N = n;
 
     // ---- per-cell arrays ----
@@ -192,25 +201,20 @@ export class Circuit {
       this.up1[e.first] = from.last;
       if (from2) this.up2[e.first] = from2.last;
     };
-    up(hxEdge, this.returnMain[0]);
-    up(this.flowMain[0], hxEdge);
+    up(hxEdge, this.ret[0]);
+    up(this.flow, hxEdge);
     for (let k = 0; k < R; k++) {
       const r = this.radiators[k];
-      up(r.trvTail, this.flowMain[k]); // tee on the flow main
-      if (k < last) up(this.flowMain[k + 1], this.flowMain[k]);
-      // the radiator and lockshield tail follow on in cell order
+      const feed = k === 0 ? this.flow : this.links[k - 1];
+      // Tee before the radiator: into the TRV tail, or along the bypass.
+      up(r.trvTail, feed);
+      up(r.bypass, feed);
       up(r.rad, r.trvTail);
       up(r.lsTail, r.rad);
+      // Tee after it: the lockshield tail and the bypass rejoin.
+      up(k < last ? this.links[k] : this.ret[last], r.lsTail, r.bypass);
     }
-    up(this.bypass, this.flowMain[last]);
-    // Tees on the return main: each radiator's lockshield tail joins the
-    // water coming back from further along (the bypass, at the far end).
-    for (let k = 0; k < R; k++)
-      up(
-        this.returnMain[k],
-        this.radiators[k].lsTail,
-        k === last ? this.bypass : this.returnMain[k + 1],
-      );
+    for (let k = last - 1; k >= 0; k--) up(this.ret[k], this.ret[k + 1]);
 
     // A link carries the downstream edge's flow, except at a merge where
     // each incoming link carries its own upstream edge's flow.
@@ -239,20 +243,21 @@ export class Circuit {
     this.minC = Math.min(...this.C);
   }
 
-  /** The edge with this role; `n` picks the radiator or main section. */
+  /** The edge with this role; `n` picks the radiator, link or return section. */
   edge(role: EdgeRole, n = 0): Edge {
     switch (role) {
       case "hx":
         return this.edges[this.edgeOf[this.hx]];
       case "flow":
-        return this.flowMain[n];
+        return this.flow;
+      case "link":
+        return this.links[n];
       case "ret":
-        return this.returnMain[n];
-      case "bypass":
-        return this.bypass;
+        return this.ret[n];
       case "trvTail":
       case "rad":
       case "lsTail":
+      case "bypass":
         return this.radiators[n][role];
     }
   }
@@ -260,30 +265,18 @@ export class Circuit {
   cellInfo(i: number): CellInfo {
     const edge = this.edges[this.edgeOf[i]];
     const index = i - edge.first;
-    const onRadiator =
-      edge.role === "trvTail" || edge.role === "rad" || edge.role === "lsTail";
+    const atRadiator =
+      edge.role === "trvTail" ||
+      edge.role === "rad" ||
+      edge.role === "lsTail" ||
+      edge.role === "bypass";
     return {
       edge,
       role: edge.role,
       room: edge.room,
-      radiator: onRadiator ? edge.n : -1,
+      radiator: atRadiator ? edge.n : -1,
       index,
       alongM: ((index + 0.5) / edge.cells) * edge.lenM,
     };
-  }
-
-  /**
-   * Cells water passes through from the boiler to radiator k and back,
-   * excluding the heat exchanger (for steady-state estimates).
-   */
-  pathThrough(k: number): number[] {
-    const cells = (e: Edge) =>
-      Array.from({ length: e.cells }, (_, j) => e.first + j);
-    const r = this.radiators[k];
-    const out: number[] = [];
-    for (let j = 0; j <= k; j++) out.push(...cells(this.flowMain[j]));
-    out.push(...cells(r.trvTail), ...cells(r.rad), ...cells(r.lsTail));
-    for (let j = k; j >= 0; j--) out.push(...cells(this.returnMain[j]));
-    return out;
   }
 }

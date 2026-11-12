@@ -1,13 +1,25 @@
 /*
- * How the pump's flow divides around the circuit.
+ * How the pump's flow divides around the one-pipe loop.
  *
- * The pump is sized for the radiators: it delivers the sum of their design
- * flows. Each radiator takes its design flow scaled by its TRV opening and
- * lockshield setting (the two valves are in series). Whatever the radiators
- * don't take carries on along the flow main and returns through the
- * automatic bypass valve at the far end, so water always circulates.
+ * All the water passes every radiator's pair of tees. At each one it splits
+ * between the radiator and the open bypass pipe under it, in proportion to
+ * how freely each path lets water through: the radiator's conductance scaled
+ * by its TRV opening and lockshield setting (the two valves are in series),
+ * against the bypass pipe's. With both valves fully open and equal
+ * conductances it's half and half; as the TRV closes, more goes round the
+ * bypass. Either way the loop keeps flowing.
  */
 import type { Circuit } from "./circuit";
+
+/** Share of the loop flow that goes through a radiator rather than its bypass. */
+export function radiatorShare(
+  conductance: number,
+  trvOpening: number,
+  lockshield: number,
+): number {
+  const k = conductance * trvOpening * lockshield;
+  return k / (k + 1);
+}
 
 /** Fill `out` (kg/s per edge) from the pump flow and per-radiator flows. */
 export function edgeFlows(
@@ -17,17 +29,14 @@ export function edgeFlows(
   out: Float64Array,
 ): void {
   out[c.edgeOf[c.hx]] = pump;
-  // Along the flow main, each tee takes that radiator's share; the return
-  // main mirrors it on the way back.
-  let f = pump;
+  out[c.flow.id] = pump;
+  for (const e of c.links) out[e.id] = pump;
+  for (const e of c.ret) out[e.id] = pump;
   for (let k = 0; k < c.radiators.length; k++) {
-    out[c.flowMain[k].id] = f;
-    out[c.returnMain[k].id] = f;
     const r = c.radiators[k];
     out[r.trvTail.id] = out[r.rad.id] = out[r.lsTail.id] = radiator[k];
-    f -= radiator[k];
+    out[r.bypass.id] = pump - radiator[k];
   }
-  out[c.bypass.id] = f;
 }
 
 /**

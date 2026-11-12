@@ -3,7 +3,8 @@
  *
  * The house plan (src/house/plan.ts) says which rooms and radiators there
  * are; circuit.ts turns it into a loop of water "cells" and hydraulics.ts
- * decides how the pump's flow divides between the radiators and the bypass.
+ * decides how the pump's flow divides between each radiator and the bypass
+ * pipe under it.
  *
  * Each sub-step: water is advected cell to cell (upwind finite volume, with
  * mixing where branches rejoin), every cell exchanges heat with the room
@@ -12,7 +13,7 @@
  */
 import { makePlan, type HousePlan, type RoomSpec } from "../house/plan";
 import { CP, Circuit, HX, Kind, type CellInfo } from "./circuit";
-import { edgeFlows } from "./hydraulics";
+import { edgeFlows, radiatorShare } from "./hydraulics";
 
 export { CP };
 
@@ -196,7 +197,6 @@ export class Sim {
   private readonly roomTold: Float64Array; // room temps at step start
   private readonly radR: Float64Array; // W per room, scratch
   private readonly pipeR: Float64Array;
-  private readonly paths: number[][]; // boiler -> radiator k -> boiler
   private hKey = ""; // insulation level the cached H values are for
   private readonly hVal: Float64Array;
 
@@ -232,7 +232,6 @@ export class Sim {
     this.radR = new Float64Array(R);
     this.pipeR = new Float64Array(R);
     this.hVal = new Float64Array(R);
-    this.paths = plan.rooms.map((_, k) => c.pathThrough(k));
     this.rooms = plan.rooms.map(() => ({
       T: 14,
       Tsensor: 14,
@@ -360,8 +359,9 @@ export class Sim {
     for (let k = 0; k < this.radFlow.length; k++) s += this.radFlow[k];
     return s;
   }
-  get bypassLpm(): number {
-    return this.m[this.circuit.bypass.id] * 60;
+  /** Flow round the bypass pipe under radiator k, L/min. */
+  bypassLpm(k: number): number {
+    return this.m[this.circuit.radiators[k].bypass.id] * 60;
   }
   get flowT(): number {
     return this.T[this.circuit.hx];
@@ -373,7 +373,7 @@ export class Sim {
     return this.T[this.circuit.radiators[k].rad.last];
   }
   get returnT(): number {
-    return this.T[this.circuit.returnMain[0].last];
+    return this.T[this.circuit.ret[0].last];
   }
   get efficiency(): number {
     return efficiency(this.returnT);
@@ -437,18 +437,19 @@ export class Sim {
     if (!p.boilerOn) this.overrun = 0;
     else if (this.demand) this.overrun = K.PUMP_OVERRUN_S;
     this.pumpOn = p.boilerOn && (this.demand || this.overrun > 0);
-    // The pump is sized for every radiator's design flow. Each TRV and its
-    // lockshield (in series) cut that radiator's share; whatever the
-    // radiators don't take goes round through the automatic bypass valve.
+    // One loop: all the pump's water passes every radiator. At each one it
+    // splits between the radiator (TRV and lockshield in series) and the
+    // open bypass pipe under it.
     const specs = this.plan.rooms;
-    let design = 0;
-    for (const s of specs) design += s.radiator.designLpm;
-    this.mMain = this.pumpOn ? design / 60 : 0;
-    for (let k = 0; k < specs.length; k++) {
-      const share = this.pumpOn ? specs[k].radiator.designLpm / 60 : 0;
+    this.mMain = this.pumpOn ? this.plan.pumpLpm / 60 : 0;
+    for (let k = 0; k < specs.length; k++)
       this.radFlow[k] =
-        share * this.rooms[k].trvOpening * p.radiators[k].lockshield;
-    }
+        this.mMain *
+        radiatorShare(
+          specs[k].radiator.conductance,
+          this.rooms[k].trvOpening,
+          p.radiators[k].lockshield,
+        );
     edgeFlows(this.circuit, this.mMain, this.radFlow, this.m);
   }
 
@@ -461,7 +462,7 @@ export class Sim {
     const Tr = this.roomTold;
     for (let r = 0; r < rooms.length; r++) Tr[r] = rooms[r].T;
     for (let e = 0; e < m.length; e++) mcp[e] = m[e] * CP;
-    const retLast = c.returnMain[0].last;
+    const retLast = c.ret[0].last;
     Told.set(T);
 
     // Burner: modulates to hold the heat-exchanger outlet at the flow set-point.
@@ -561,49 +562,67 @@ export class Sim {
   // ---- Analysis helpers ----
 
   /**
-   * Heat given to the room by the water on its way from the boiler through
-   * radiator k and back, at a steady flow `mdot` (TRV fully open).
+   * Heat (W) into room k's air with every room at `roomT`, the boiler
+   * holding `flowT`, every TRV fully open and the pump running: one pass
+   * round the loop in cell order (each cell comes after the ones feeding
+   * it), mixing where the radiator and its bypass rejoin.
    */
-  private loopHeat(
-    k: number,
-    flowT: number,
-    roomT: number,
-    mdot: number,
-  ): number {
+  private steadyHeat(k: number, flowT: number, roomT: number): number {
     const c = this.circuit;
-    const mcp = mdot * CP;
-    let t = flowT;
+    const pump = this.plan.pumpLpm / 60;
+    const rad = new Float64Array(this.rooms.length);
+    this.plan.rooms.forEach((s, j) => {
+      rad[j] =
+        pump *
+        radiatorShare(
+          s.radiator.conductance,
+          1,
+          this.params.radiators[j].lockshield,
+        );
+    });
+    const m = new Float64Array(c.edges.length);
+    edgeFlows(c, pump, rad, m);
+    const out = new Float64Array(c.N); // water temperature leaving each cell
     let total = 0;
-    for (const i of this.paths[k]) {
-      const d = t - roomT;
+    for (let i = 0; i < c.N; i++) {
+      if (i === c.hx) {
+        out[i] = flowT;
+        continue;
+      }
+      let tIn = out[c.up1[i]];
+      if (c.up2[i] >= 0) {
+        const a = m[c.link1[i]];
+        const b = m[c.link2[i]];
+        tIn = (a * out[c.up1[i]] + b * out[c.up2[i]]) / (a + b);
+      }
+      const d = tIn - roomT;
       const qi =
         c.kind[i] === Kind.RAD
           ? c.ratedW[i] *
             Math.sign(d) *
             Math.pow(Math.abs(d) / 50, c.exponent[i])
           : c.UA[i] * d;
-      total += qi;
-      t -= qi / mcp;
+      const mcp = m[c.edgeOf[i]] * CP;
+      out[i] = mcp > 0 ? tIn - qi / mcp : roomT;
+      if (c.room[i] === k) total += qi;
     }
     return total;
   }
 
   /**
-   * Room temperature at which radiator k (TRV fully open) exactly balances
-   * that room's fabric loss. Ignores heat traded with neighbouring rooms.
+   * Room temperature at which room k's radiator and pipes (TRVs fully open)
+   * exactly balance its fabric loss. Assumes every room is at the same
+   * temperature, so ignores heat traded with neighbouring rooms.
    */
   maxAchievableRoomTemp(k: number): number {
     const H = this.H(k);
     const To = this.params.outdoor;
     const Tf = this.params.flowSet;
-    const mdot =
-      (this.plan.rooms[k].radiator.designLpm / 60) *
-      this.params.radiators[k].lockshield;
     let lo = To;
     let hi = Math.max(To, Tf);
     for (let it = 0; it < 40; it++) {
       const mid = (lo + hi) / 2;
-      const f = this.loopHeat(k, Tf, mid, mdot) - H * (mid - To);
+      const f = this.steadyHeat(k, Tf, mid) - H * (mid - To);
       if (f > 0) lo = mid;
       else hi = mid;
     }

@@ -24,8 +24,8 @@ describe.each(ROOM_COUNTS)("%i room(s)", (n) => {
     expect(sim.rooms).toHaveLength(n);
     expect(sim.params.radiators).toHaveLength(n);
     expect(sim.circuit.radiators).toHaveLength(n);
-    expect(sim.circuit.flowMain).toHaveLength(n);
-    expect(sim.circuit.returnMain).toHaveLength(n);
+    expect(sim.circuit.links).toHaveLength(n - 1);
+    expect(sim.circuit.ret).toHaveLength(n);
     // every cell belongs to exactly one edge, in order, with no gaps
     let next = 0;
     for (const e of sim.circuit.edges) {
@@ -46,7 +46,14 @@ describe.each(ROOM_COUNTS)("%i room(s)", (n) => {
       }
       sim.advance(30);
       expect(flowImbalance(sim.circuit, sim.m)).toBeLessThan(1e-12);
-      expect(sim.bypassLpm).toBeGreaterThanOrEqual(-1e-12);
+      for (let k = 0; k < n; k++) {
+        // Some water always goes round each bypass; never more than the pump.
+        expect(sim.bypassLpm(k)).toBeGreaterThan(0);
+        expect(sim.radFlowLpm(k) + sim.bypassLpm(k)).toBeCloseTo(
+          sim.flowLpm,
+          12,
+        );
+      }
     }
   });
 
@@ -100,14 +107,26 @@ describe("a row of three rooms", () => {
     expect(shut.radFlowLpm(1)).toBe(0);
   });
 
-  it("sends the flow a shut radiator refuses round the bypass", () => {
+  it("keeps the loop flowing round the bypasses with every TRV shut", () => {
     const sim = new Sim(makePlan(3));
     sim.params.thermostatOn = true;
     sim.params.radiators.forEach((r) => (r.trvIndex = 0));
     sim.advance(60);
     expect(sim.status).toBe("bypass");
-    expect(sim.bypassLpm).toBeCloseTo(sim.flowLpm, 12);
-    expect(sim.flowLpm).toBeCloseTo(6, 12); // 3 radiators x 2 L/min design flow
+    expect(sim.flowLpm).toBeCloseTo(4, 12); // one loop, 4 L/min
+    for (let k = 0; k < 3; k++)
+      expect(sim.bypassLpm(k)).toBeCloseTo(sim.flowLpm, 12);
+  });
+
+  it("splits the loop half and half at a fully open radiator", () => {
+    const sim = new Sim(makePlan(3));
+    sim.params.thermostatOn = true;
+    sim.params.thermostatSet = 30;
+    sim.advance(120); // TRV sensors still cold: fully open
+    for (let k = 0; k < 3; k++) expect(sim.radFlowLpm(k)).toBeCloseTo(2, 6);
+    // Each radiator gets cooler water than the one before it.
+    expect(sim.radInT(1)).toBeLessThan(sim.radInT(0));
+    expect(sim.radInT(2)).toBeLessThan(sim.radInT(1));
   });
 });
 

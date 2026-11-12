@@ -1,21 +1,19 @@
 /*
  * The water pipes: casings, the water inside (one tinted piece per model
- * cell), the flow dots, the valve bodies the tails run through, the
- * automatic bypass valve, and the places where one pipe passes in front of
- * another.
+ * cell), the flow dots, the valve bodies the tails run through, and any
+ * places where one pipe passes in front of another.
  */
-import { Graphics, GraphicsContext, type Text } from "pixi.js";
+import { Graphics, GraphicsContext } from "pixi.js";
 import { PIPE, type Edge } from "../../sim/circuit";
 import { waterColor } from "../colors";
 import {
-  MUTED,
   poly,
   type Frame,
   type HitPass,
   type SceneContext,
   type View,
 } from "../context";
-import { Polyline, distToPolyline, inRect, type Pt } from "../geometry";
+import { Polyline, distToPolyline, type Pt } from "../geometry";
 import type { Hit } from "../hit";
 import { pathFor } from "../layout";
 
@@ -67,7 +65,6 @@ export class PipeNetworkView implements View {
   private readonly pxPerM: number; // drawn pixels per metre of pipe
   private readonly scratch: Pt = { x: 0, y: 0 }; // reused per-frame point
   private readonly ring = new Graphics();
-  private readonly abvLabel: Text;
   /** Where a pipe crosses in front of another: its cell and water patch. */
   private readonly overpasses: { at: Pt; cell: number; water: Graphics }[] = [];
   private overpassColors: Int32Array = new Int32Array(0);
@@ -77,7 +74,7 @@ export class PipeNetworkView implements View {
     const { sim, lay, layers } = ctx;
     const c = sim.circuit;
     const path = (e: Edge) => pathFor(lay, e.role, e.n);
-    this.pxPerM = lay.pipes.flow[0].length / c.flowMain[0].lenM;
+    this.pxPerM = lay.pipes.flow.length / c.flow.lenM;
 
     // Split each pipe's drawn path into one piece per model cell.
     for (const e of c.edges) {
@@ -133,30 +130,6 @@ export class PipeNetworkView implements View {
 
     this.buildDots();
     this.buildOverpasses();
-
-    // Automatic bypass valve: spring-loaded, opens as the TRVs close.
-    const { x, y } = lay.bypass.valve;
-    const abv = new Graphics()
-      .poly([x - 12, y - 8, x, y, x - 12, y + 8])
-      .fill(0xcfa94e)
-      .stroke({ width: 1, color: 0x8d6d25 })
-      .poly([x + 12, y - 8, x, y, x + 12, y + 8])
-      .fill(0xcfa94e)
-      .stroke({ width: 1, color: 0x8d6d25 })
-      .moveTo(x, y)
-      .lineTo(x, y - 11)
-      .stroke({ width: 2, color: 0x5b6470 });
-    abv.moveTo(x, y - 11);
-    for (let k = 0; k < 4; k++)
-      abv.lineTo(k % 2 ? x - 4 : x + 4, y - 13 - k * 2);
-    abv.lineTo(x, y - 21).stroke({ width: 1.2, color: 0x5b6470 });
-    abv.roundRect(x - 6, y - 24, 12, 4, 1).fill(0x5b6470);
-    layers.devices.addChild(abv);
-    this.abvLabel = ctx.label("Bypass valve", x + 16, y - 24, {
-      size: 11,
-      color: MUTED,
-    });
-    this.abvLabel.visible = false; // shown only while the valve is hovered
 
     // Hover highlight for a pipe cell.
     this.ring
@@ -222,7 +195,6 @@ export class PipeNetworkView implements View {
   /** Moving dots show where water is flowing; each branch has its own rate. */
   private buildDots(): void {
     const { sim, lay, layers } = this.ctx;
-    const c = sim.circuit;
     const P = lay.pipes;
     const n = lay.rooms.length;
     const group = (
@@ -242,46 +214,40 @@ export class PipeNetworkView implements View {
       return g;
     };
 
-    // Circuit distance along the main line: the flow main from the boiler,
-    // the bypass, then the return main back to the boiler.
-    const uFlow: number[] = [];
-    const uRet: number[] = [];
-    let u = 0;
+    // Circuit distance along the main line: the flow pipe from the boiler,
+    // then for each radiator its bypass and the link on to the next, then
+    // the return back to the boiler. All of it carries the pump's flow.
+    const uA: number[] = []; // at each radiator's first tee
+    const uB: number[] = []; // at its second tee
+    let u = P.flow.length;
+    const mainPaths: { path: Polyline; u: number }[] = [{ path: P.flow, u: 0 }];
     for (let k = 0; k < n; k++) {
-      uFlow[k] = u;
-      u += P.flow[k].length;
+      uA[k] = u;
+      u += P.bypass[k].length;
+      uB[k] = u;
+      if (k < n - 1) {
+        mainPaths.push({ path: P.links[k], u });
+        u += P.links[k].length;
+      }
     }
-    const uBypass = u;
-    u += P.bypass.length;
     for (let k = n - 1; k >= 0; k--) {
-      uRet[k] = u;
+      mainPaths.push({ path: P.ret[k], u });
       u += P.ret[k].length;
     }
-
-    let main: DotGroup | null = null;
+    const main = group(mainPaths, () => sim.flowLpm, null);
     for (let k = 0; k < n; k++) {
-      // A stretch of flow main and the return main under it carry the same flow.
-      const cell = c.flowMain[k].first;
-      main = group(
-        [
-          { path: P.flow[k], u: uFlow[k] },
-          { path: P.ret[k], u: uRet[k] },
-        ],
-        () => sim.cellFlowLpm(cell),
-        main,
-      );
-      // A radiator's tails: the TRV tail leaves the flow main where this
-      // stretch ends; the lockshield tail lines up with the return it joins.
+      // The radiator's tails: the TRV tail starts at the first tee; the
+      // lockshield tail is placed so it lines up with the second.
       group(
         [
-          { path: P.trvTail[k], u: uFlow[k] + P.flow[k].length },
-          { path: P.lsTail[k], u: uRet[k] - P.lsTail[k].length },
+          { path: P.trvTail[k], u: uA[k] },
+          { path: P.lsTail[k], u: uB[k] - P.lsTail[k].length },
         ],
         () => sim.radFlowLpm(k),
         main,
       );
+      group([{ path: P.bypass[k], u: uA[k] }], () => sim.bypassLpm(k), main);
     }
-    group([{ path: P.bypass, u: uBypass }], () => sim.bypassLpm, main);
   }
 
   /**
@@ -356,8 +322,6 @@ export class PipeNetworkView implements View {
         this.placeDots(path, g.dots[k], g.offset - u, flowing),
       );
     }
-
-    this.abvLabel.visible = f.hover?.kind === "bypass-valve";
   }
 
   private placeDots(
@@ -377,9 +341,7 @@ export class PipeNetworkView implements View {
   }
 
   hitTest(p: Pt, pass: HitPass): Hit | null {
-    if (pass === "device") {
-      if (inRect(p, this.ctx.lay.bypass.box)) return { kind: "bypass-valve" };
-    } else if (pass === "water") {
+    if (pass === "water") {
       // At a crossing, the pipe in front is the one under the pointer.
       for (const o of this.overpasses)
         if (Math.abs(p.x - o.at.x) <= 7 && Math.abs(p.y - o.at.y) <= 7)

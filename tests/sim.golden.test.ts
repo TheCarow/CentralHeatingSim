@@ -42,7 +42,7 @@ function probe(sim: Sim): Probe {
     burnerW: sim.burnerW,
     pump: sim.flowLpm,
     rad: sim.radFlowLpm(0),
-    bypass: sim.bypassLpm,
+    bypass: sim.bypassLpm(0),
     trv: r.trvOpening,
     demand: sim.demand,
     status: sim.status,
@@ -107,7 +107,7 @@ const SCENARIOS: Scenario[] = [
     },
   },
   {
-    name: "TRV shut: all flow through the bypass",
+    name: "TRV shut: all flow round the bypass",
     hours: 1.5,
     setup: (sim) => {
       sim.params.thermostatOn = true;

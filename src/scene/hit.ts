@@ -8,7 +8,6 @@ export type HitKind =
   | "trv"
   | "trv-inset"
   | "power"
-  | "bypass-valve"
   | "lockshield"
   | "thermostat"
   | "display"

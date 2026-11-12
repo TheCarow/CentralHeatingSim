@@ -1,11 +1,13 @@
 /*
  * The building and the outdoors: loft, ceiling, boiler cupboard, internal
  * walls, floor void and ground; the external wall build-up, loft insulation,
- * sky and snow, which change with the insulation level and the weather.
+ * sky and snow, which change with the insulation level and the weather; and,
+ * with the day/night cycle on, a darker sky at night and a sun or moon.
  */
 import { Graphics, GraphicsContext, type Text } from "pixi.js";
 import type { WallType } from "../../sim/model";
-import { skyTint } from "../colors";
+import { daylight } from "../../sim/weather";
+import { mixColor, skyTint } from "../colors";
 import type { Frame, HitPass, SceneContext, View } from "../context";
 import { inRect, type Pt } from "../geometry";
 import type { Hit } from "../hit";
@@ -23,6 +25,29 @@ const snowCtx = new GraphicsContext()
 export const precipitationRate = (speed: number) =>
   speed > 0 ? Math.pow(speed, 0.3) : 0;
 
+const NIGHT_SKY = 0x1d2b4c;
+const NIGHT_GROUND = 0x4a5468; // tint that darkens the outside ground at night
+const DAY_INK = { title: 0x33475b, temp: 0x1f3347 };
+const NIGHT_INK = { title: 0xc9d6e6, temp: 0xffffff }; // readable on the night sky
+
+// A small sun and moon by the outside reading (day/night cycle only).
+const sunCtx = new GraphicsContext();
+for (let k = 0; k < 8; k++) {
+  const a = (k * Math.PI) / 4;
+  sunCtx.moveTo(Math.cos(a) * 8, Math.sin(a) * 8);
+  sunCtx.lineTo(Math.cos(a) * 11, Math.sin(a) * 11);
+}
+sunCtx
+  .stroke({ width: 2, color: 0xf2b630, cap: "round" })
+  .circle(0, 0, 6)
+  .fill(0xf6c445);
+const moonCtx = new GraphicsContext()
+  .circle(0, 0, 7)
+  .fill(0xf1eed6)
+  .circle(-2, -2, 1.6)
+  .circle(2.5, 1.5, 1.2)
+  .fill(0xd8d3b3);
+
 export class FabricView implements View {
   /** Outer face of the external wall (depends on the insulation build-up). */
   wallEnd: number;
@@ -36,6 +61,9 @@ export class FabricView implements View {
     [];
   /** Time as the snow sees it: runs at precipitationRate(speed). */
   private snowClock = 0;
+  private readonly sun = new Graphics(sunCtx);
+  private readonly moon = new Graphics(moonCtx);
+  private night = false; // outside labels currently in their night colours
   private readonly loftText: Text;
   private readonly outsideTitle: Text;
   private readonly outsideTemp: Text;
@@ -102,6 +130,8 @@ export class FabricView implements View {
       });
       layers.fx.addChild(s);
     }
+    this.sun.visible = this.moon.visible = false;
+    layers.fx.addChild(this.sun, this.moon);
 
     this.loftText = ctx.label("", 24, 30, {
       size: 11,
@@ -220,6 +250,9 @@ export class FabricView implements View {
     const cx = (x + lay.W) / 2;
     this.outsideTitle.x = cx;
     this.outsideTemp.x = cx;
+    // sun / moon just above the OUTSIDE title
+    this.sun.position.set(cx, lay.thermoReadY - 42);
+    this.moon.position.set(cx, lay.thermoReadY - 42);
     for (const s of this.snow) s.x = x + Math.random() * (lay.W - x);
   }
 
@@ -227,11 +260,28 @@ export class FabricView implements View {
     const { sim, lay } = this.ctx;
     const p = sim.params;
     if (p.insulation !== this.builtInsulation) this.rebuild();
-    this.sky.tint = skyTint(p.outdoor);
+    const To = sim.outdoorT; // follows the day/night cycle if it's on
+
+    // Sky colour follows the temperature; with the cycle on it darkens to a
+    // night blue between dusk and dawn, and the ground darkens with it.
+    const day = p.dayNight ? daylight(sim.time) : 1;
+    const sky = skyTint(To);
+    this.sky.tint = day < 1 ? mixColor(NIGHT_SKY, sky, day) : sky;
+    this.outsideGround.tint =
+      day < 1 ? mixColor(NIGHT_GROUND, 0xffffff, day) : 0xffffff;
+    const night = day < 0.5;
+    if (night !== this.night) {
+      this.night = night;
+      const ink = night ? NIGHT_INK : DAY_INK;
+      this.outsideTitle.style.fill = ink.title;
+      this.outsideTemp.style.fill = ink.temp;
+    }
+    this.sun.visible = p.dayNight && !night;
+    this.moon.visible = p.dayNight && night;
 
     // Snow when it's freezing. It falls and sways faster at higher
     // simulation speeds and hangs still while paused.
-    const snowing = p.outdoor <= 0.5;
+    const snowing = To <= 0.5;
     const step = f.dt * precipitationRate(f.speed);
     this.snowClock += step;
     for (const s of this.snow) {
@@ -246,7 +296,8 @@ export class FabricView implements View {
     }
 
     this.loftText.visible = f.hover?.kind === "loft";
-    if (f.refreshText) this.outsideTemp.text = `${p.outdoor.toFixed(0)} °C`;
+    // (+ 0 turns -0 into 0, so a reading never shows "-0 °C")
+    if (f.refreshText) this.outsideTemp.text = `${Math.round(To) + 0} °C`;
   }
 
   hitTest(p: Pt, pass: HitPass): Hit | null {

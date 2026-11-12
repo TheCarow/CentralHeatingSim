@@ -5,6 +5,7 @@ import { roomOf, type Hit } from "../scene/hit";
 import { K, TRV_SETTINGS, type Sim, type SimStatus } from "../sim/model";
 import type { CellInfo } from "../sim/circuit";
 import { toCss, waterColor } from "../scene/colors";
+import { DAY_NIGHT, hourOfDay } from "../sim/weather";
 
 export interface TipRow {
   label: string;
@@ -399,13 +400,34 @@ export function describe(hit: Hit, sim: Sim): TipContent {
       };
     }
 
-    case "outside":
+    case "outside": {
+      const rows: TipRow[] = [
+        {
+          label: dT >= 0 ? "Room is warmer by" : "Room is colder by",
+          value: `${Math.abs(dT).toFixed(1)} °C`,
+        },
+      ];
+      if (p.dayNight) {
+        const h = hourOfDay(sim.time);
+        const clock = `${String(Math.floor(h)).padStart(2, "0")}:${String(Math.floor((h % 1) * 60)).padStart(2, "0")}`;
+        rows.unshift(
+          { label: "Time of day", value: clock },
+          { label: "Daily average", value: t1(p.outdoor) },
+          {
+            label: "Coldest / warmest",
+            value: `${(p.outdoor - DAY_NIGHT.swing).toFixed(0)} / ${(p.outdoor + DAY_NIGHT.swing).toFixed(0)} °C`,
+          },
+        );
+      }
       return {
         title: "Outdoors",
-        value: t1(p.outdoor),
-        rows: [{ label: "Room is warmer by", value: `${dT.toFixed(1)} °C` }],
-        note: "Heat loss is proportional to this difference. Click (Shift+click) or scroll here to change the outside temperature.",
+        value: t1(sim.outdoorT),
+        rows,
+        note: p.dayNight
+          ? "With the day/night cycle on, it's coldest around 3 am and warmest around 3 pm, so the house loses more heat at night. Click (Shift+click) or scroll here to change the daily average."
+          : "Heat loss is proportional to this difference. Click (Shift+click) or scroll here to change the outside temperature.",
       };
+    }
 
     case "void":
       return {

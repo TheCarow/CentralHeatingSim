@@ -99,6 +99,7 @@ export class Controls {
   private readonly flow = $<HTMLInputElement>("i-flow");
   private readonly stat = $<HTMLInputElement>("i-stat");
   private readonly out = $<HTMLInputElement>("i-out");
+  private readonly dayNight = $<HTMLInputElement>("i-daynight");
   private readonly power = $<HTMLButtonElement>("i-power");
   private roomButtons: HTMLButtonElement[] = [];
   private insButtons: HTMLButtonElement[] = [];
@@ -118,6 +119,10 @@ export class Controls {
     });
     this.stat.addEventListener("input", () => {
       p().thermostatSet = Number(this.stat.value);
+      this.sync();
+    });
+    this.dayNight.addEventListener("change", () => {
+      p().dayNight = this.dayNight.checked;
       this.sync();
     });
     this.out.addEventListener("input", () => {
@@ -255,7 +260,11 @@ export class Controls {
     for (const r of [this.flow, this.stat, this.out]) paintFill(r);
     $("o-flow").textContent = `${p.flowSet} °C`;
     $("o-stat").textContent = p.thermostatOn ? fmtT(p.thermostatSet) : "Off";
-    $("o-out").textContent = `${p.outdoor} °C`;
+    // With the cycle on, the slider sets the daily average.
+    $("o-out").textContent = p.dayNight
+      ? `${p.outdoor} °C average`
+      : `${p.outdoor} °C`;
+    this.dayNight.checked = p.dayNight;
     $("o-power").textContent = p.boilerOn ? "On" : "Off";
     this.power.setAttribute("aria-checked", String(p.boilerOn));
     markChecked(this.roomButtons, this.sim.rooms.length - 1);

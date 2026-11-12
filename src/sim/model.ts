@@ -13,6 +13,7 @@
 import { makePlan, type HousePlan, type RoomSpec } from "../house/plan";
 import { CP, Circuit, HX, Kind, type CellInfo } from "./circuit";
 import { edgeFlows, radiatorFlows } from "./hydraulics";
+import { outdoorAt } from "./weather";
 
 export { CP };
 
@@ -147,7 +148,8 @@ export interface SimParams {
   flowSet: number; // °C boiler flow temperature
   thermostatSet: number; // °C room thermostat
   insulation: InsulationKey;
-  outdoor: number; // °C
+  outdoor: number; // °C; the daily average when the day/night cycle is on
+  dayNight: boolean; // outside temperature swings over the day
   boilerOn: boolean; // master power switch
   thermostatOn: boolean; // thermostat heating on/off
   radiators: RadiatorParams[]; // one per room, left to right
@@ -179,6 +181,9 @@ export type SimStatus =
   "off" | "standby" | "overrun" | "bypass" | "heating" | "idle";
 
 export type Limiter = "thermostat" | "radiator" | "trv" | "trv-shut" | "off";
+
+/** Simulations (re)start at 06:00 on day 1. */
+const START_TIME = 6 * 3600;
 
 export class Sim {
   readonly plan: HousePlan;
@@ -249,16 +254,23 @@ export class Sim {
       thermostatSet: 20,
       insulation: "average",
       outdoor: 5,
+      dayNight: false,
       boilerOn: true,
       thermostatOn: false, // page opens with the thermostat off
       // setting "4" ≈ 24 °C, lockshield fully open
       radiators: plan.rooms.map(() => ({ trvIndex: 5, lockshield: 1 })),
     };
-    this.reset(this.params.outdoor); // cold start: everything at outside temperature
+    this.coldStart();
+  }
+
+  /** Restart with rooms, water and pipes all at the outside temperature. */
+  coldStart(): void {
+    const p = this.params;
+    this.reset(outdoorAt(p.outdoor, p.dayNight, START_TIME));
   }
 
   reset(startTemp = 14): void {
-    this.time = 6 * 3600; // day 1, 06:00
+    this.time = START_TIME;
     this.T.fill(startTemp);
     for (const r of this.rooms) {
       r.T = r.Tsensor = startTemp;
@@ -297,6 +309,11 @@ export class Sim {
   get insulation(): Insulation {
     return INSULATION[this.params.insulation];
   }
+  /** Outside temperature right now (follows the day/night cycle if on). */
+  get outdoorT(): number {
+    const p = this.params;
+    return outdoorAt(p.outdoor, p.dayNight, this.time);
+  }
   /** Heat-loss coefficients (W/K) of room k. */
   lossesFor(k: number): LossCoefficients {
     return lossCoefficients(this.insulation, this.plan.rooms[k]);
@@ -316,7 +333,7 @@ export class Sim {
   /** Heat escaping right now through each path, W, summed over rooms. */
   lossWatts(): LossCoefficients {
     const sum = { wall: 0, roof: 0, vent: 0, total: 0 };
-    const To = this.params.outdoor;
+    const To = this.outdoorT;
     this.rooms.forEach((r, k) => {
       const c = this.lossesFor(k);
       const dT = r.T - To;
@@ -511,13 +528,14 @@ export class Sim {
     // Rooms: radiator and pipe heat in, fabric loss out, and heat through
     // the internal walls to the rooms either side.
     const G = this.plan.partitionUA;
+    const To = this.outdoorT;
     const last = rooms.length - 1;
     let rad = 0;
     let pipe = 0;
     let loss = 0;
     for (let r = 0; r <= last; r++) {
       const rs = rooms[r];
-      const lossR = this.H(r) * (Tr[r] - p.outdoor);
+      const lossR = this.H(r) * (Tr[r] - To);
       let part = 0;
       if (r > 0) part += G * (Tr[r] - Tr[r - 1]);
       if (r < last) part += G * (Tr[r] - Tr[r + 1]);
@@ -548,7 +566,7 @@ export class Sim {
     if (!force && this.time < this.nextSample) return;
     this.history.push({
       t: this.time,
-      outdoor: this.params.outdoor,
+      outdoor: this.outdoorT,
       thermostat: this.params.thermostatSet,
       flow: this.flowT,
       ret: this.returnT,
@@ -614,8 +632,9 @@ export class Sim {
 
   /**
    * Room temperature at which room k's radiator and pipes (TRVs fully open)
-   * exactly balance its fabric loss. Assumes every room is at the same
-   * temperature, so ignores heat traded with neighbouring rooms.
+   * exactly balance its fabric loss, at the daily-average outside
+   * temperature. Assumes every room is at the same temperature, so ignores
+   * heat traded with neighbouring rooms.
    */
   maxAchievableRoomTemp(k: number): number {
     const H = this.H(k);

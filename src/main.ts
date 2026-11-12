@@ -67,10 +67,11 @@ const DEFAULT_SPEED = 20;
     p.boilerOn = old.boilerOn;
     p.insulation = old.insulation;
     p.outdoor = old.outdoor;
+    p.dayNight = old.dayNight;
     old.radiators.forEach((r, k) => {
       if (k < rooms) p.radiators[k] = { ...r };
     });
-    next.reset(p.outdoor);
+    next.coldStart();
     sim = next;
     scene.setSim(sim);
     chart.setSim(sim);
@@ -125,7 +126,7 @@ const DEFAULT_SPEED = 20;
   document.getElementById("btn-reset")!.addEventListener("click", () => {
     // Cold start: rooms, water, pipes and TRV sensors all at the outdoor
     // temperature, as when the page opens.
-    sim.reset(sim.params.outdoor);
+    sim.coldStart();
     if (chartVisible()) chart.render();
   });
   document.addEventListener("keydown", (e) => {

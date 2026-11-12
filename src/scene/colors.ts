@@ -36,6 +36,17 @@ function oklabToHex([L, a, b]: Lab): number {
   return (r << 16) | (g << 8) | bl;
 }
 
+/** Blend two colours in OKLab: t = 0 gives a, t = 1 gives b. */
+export function mixColor(a: number, b: number, t: number): number {
+  const p = hexToOklab(a);
+  const q = hexToOklab(b);
+  return oklabToHex([
+    p[0] + (q[0] - p[0]) * t,
+    p[1] + (q[1] - p[1]) * t,
+    p[2] + (q[2] - p[2]) * t,
+  ]);
+}
+
 /** Piecewise OKLab ramp through [value, colour] stops. */
 function makeRamp(stops: ReadonlyArray<readonly [number, number]>) {
   const labs = stops.map(([v, c]) => [v, hexToOklab(c)] as const);

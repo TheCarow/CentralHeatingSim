@@ -33,6 +33,7 @@ recorded values (`tests/golden/sim-baseline.json`). Re-record it with
 | TRV head setting (0, ❄, 1–5), per radiator | buttons in that radiator's row, or click/scroll the TRV |
 | Insulation (Poor → Excellent) | buttons |
 | Outside temperature (−15–25 °C) | slider, or click/scroll the outside area |
+| Day/night cycle (optional) | checkbox under Outside: the outside temperature swings ±4 °C around the slider's value, coldest around 3 am and warmest around 3 pm; the sky darkens at night |
 
 Shift+click turns a device down. Hover anything in the diagram for live
 details. Pipe colour runs blue (10 °C) to red (80 °C).
@@ -78,6 +79,10 @@ The history chart and table are hidden for now (`hidden` on `#history` in
   for 2 minutes after the thermostat switches off.
 - **Boiler:** modulates up to 24 kW to hold the flow set-point. Efficiency
   depends on return temperature; it condenses below about 54 °C.
+- **Outside:** a fixed temperature, or with the day/night cycle on, a
+  daily swing of ±4 °C around the chosen average (coldest about 3 am,
+  warmest about 3 pm). Heat losses, snow and the history follow the actual
+  temperature; the "could reach" estimates use the daily average.
 - **Rooms:** one thermal mass each. Heat is lost through the roof/loft and
   draughts, and through the gable wall in the end room, using U-values for
   each insulation level. Neighbouring rooms trade heat through the internal

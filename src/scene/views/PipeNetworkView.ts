@@ -19,6 +19,12 @@ import { pathFor } from "../layout";
 
 const DOT_GAP = 16; // same spacing on every pipe
 const HALF = 4; // half the water stroke width
+
+/**
+ * Width of the water stream below a lockshield: full at 100% open, thinner
+ * as it's screwed in (2.6 px at 10%, still wide enough to show its colour).
+ */
+const lockshieldStream = (setting: number) => 2 + (2 * HALF - 2) * setting;
 const CASING = 13; // pipe casing stroke width
 const CASING_COLOR = 0x36312c;
 
@@ -54,6 +60,16 @@ const along = (p: Pt, d: Pt, s: number): Pt => ({
   y: p.y + d.y * s,
 });
 
+/** (Re)draw a stretch of water as a white stroke, tinted per frame. */
+function drawStream(
+  g: Graphics,
+  pts: Pt[],
+  cap: "butt" | "round",
+  width: number,
+): void {
+  poly(g.clear(), pts).stroke({ width, color: 0xffffff, cap, join: "round" });
+}
+
 export class PipeNetworkView implements View {
   private readonly ctx: SceneContext;
   /** Every pipe cell's polyline, keyed by model cell index. */
@@ -66,8 +82,21 @@ export class PipeNetworkView implements View {
   private readonly scratch: Pt = { x: 0, y: 0 }; // reused per-frame point
   private readonly ring = new Graphics();
   /** Where a pipe crosses in front of another: its cell and water patch. */
-  private readonly overpasses: { at: Pt; cell: number; water: Graphics }[] = [];
+  private readonly overpasses: {
+    at: Pt;
+    cell: number;
+    water: Graphics;
+    /** Radiator whose lockshield sets this stream's width, or -1. */
+    radiator: number;
+  }[] = [];
   private overpassColors: Int32Array = new Int32Array(0);
+  /** Each radiator's lockshield-side water: what to redraw when it changes. */
+  private readonly lsWater: {
+    g: Graphics;
+    pts: Pt[];
+    cap: "butt" | "round";
+  }[][] = [];
+  private readonly lsDrawn: number[] = []; // setting each radiator is drawn at
 
   constructor(ctx: SceneContext) {
     this.ctx = ctx;
@@ -111,20 +140,20 @@ export class PipeNetworkView implements View {
     layers.pipes.addChild(bodies, casing);
 
     const ends = this.junctionEnds();
+    const lsTailOf = new Map(c.radiators.map((r, k) => [r.lsTail.id, k]));
     for (const [i, pts] of this.pipeCells) {
       const fix = ends.get(i);
       let q = pts;
       if (fix?.start) q = [fix.start, ...q.slice(1)];
       if (fix?.end) q = [...q.slice(0, -1), fix.end];
-      const g = poly(new Graphics(), q).stroke({
-        width: 2 * HALF,
-        color: 0xffffff,
-        cap: fix ? "butt" : "round",
-        join: "round",
-      });
+      const cap = fix ? "butt" : "round";
+      const g = new Graphics();
+      drawStream(g, q, cap, 2 * HALF);
       layers.pipes.addChild(g);
       this.cells.push(i);
       this.water.push(g);
+      const k = lsTailOf.get(c.edgeOf[i]);
+      if (k !== undefined) (this.lsWater[k] ??= []).push({ g, pts: q, cap });
     }
     this.colors = new Int32Array(this.cells.length).fill(-1);
 
@@ -280,18 +309,44 @@ export class PipeNetworkView implements View {
       const casing = new Graphics()
         .rect(px - CASING / 2, py - reach, CASING, 2 * reach)
         .fill(CASING_COLOR);
-      const water = new Graphics()
-        .rect(px - HALF, py - reach, 2 * HALF, 2 * reach)
-        .fill(0xffffff);
+      const water = new Graphics();
       layers.pipes.addChild(casing, water);
-      this.overpasses.push({ at: x.at, cell, water });
+      const radiator = x.front.role === "lsTail" ? x.front.n : -1;
+      this.overpasses.push({ at: x.at, cell, water, radiator });
+      this.drawOverpass(this.overpasses[this.overpasses.length - 1], 2 * HALF);
     }
     this.overpassColors = new Int32Array(this.overpasses.length).fill(-1);
+  }
+
+  private drawOverpass(o: { at: Pt; water: Graphics }, width: number): void {
+    const reach = CASING / 2 + 2;
+    o.water
+      .clear()
+      .rect(o.at.x - width / 2, o.at.y - reach, width, 2 * reach)
+      .fill(0xffffff);
+  }
+
+  /**
+   * The water below each lockshield is drawn thinner the further the
+   * lockshield is screwed in. Redrawn only when a setting changes.
+   */
+  private fitLockshieldStreams(): void {
+    const radiators = this.ctx.sim.params.radiators;
+    this.lsWater.forEach((pieces, k) => {
+      const setting = radiators[k].lockshield;
+      if (setting === this.lsDrawn[k]) return;
+      this.lsDrawn[k] = setting;
+      const w = lockshieldStream(setting);
+      for (const p of pieces) drawStream(p.g, p.pts, p.cap, w);
+      for (const o of this.overpasses)
+        if (o.radiator === k) this.drawOverpass(o, w);
+    });
   }
 
   update(f: Frame): void {
     const sim = this.ctx.sim;
     const { dt, speed } = f;
+    this.fitLockshieldStreams();
     for (let j = 0; j < this.cells.length; j++) {
       const col = waterColor(sim.T[this.cells[j]]);
       if (col !== this.colors[j]) {

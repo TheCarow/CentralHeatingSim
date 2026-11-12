@@ -14,6 +14,15 @@ const snowCtx = new GraphicsContext()
   .circle(0, 0, 2)
   .fill({ color: 0xffffff, alpha: 0.95 });
 
+/**
+ * How fast precipitation moves at a simulation speed, relative to real
+ * time. It speeds up with the simulation, but on a gentle curve (speed^0.3:
+ * about 2.5x at 20x, 3.4x at 60x, 6.8x at 600x) so it stays watchable, and
+ * it stops while paused.
+ */
+export const precipitationRate = (speed: number) =>
+  speed > 0 ? Math.pow(speed, 0.3) : 0;
+
 export class FabricView implements View {
   /** Outer face of the external wall (depends on the insulation build-up). */
   wallEnd: number;
@@ -25,6 +34,8 @@ export class FabricView implements View {
   private builtInsulation = "";
   private readonly snow: { g: Graphics; x: number; y: number; v: number }[] =
     [];
+  /** Time as the snow sees it: runs at precipitationRate(speed). */
+  private snowClock = 0;
   private readonly loftText: Text;
   private readonly outsideTitle: Text;
   private readonly outsideTemp: Text;
@@ -218,17 +229,20 @@ export class FabricView implements View {
     if (p.insulation !== this.builtInsulation) this.rebuild();
     this.sky.tint = skyTint(p.outdoor);
 
-    // snow when it's freezing
+    // Snow when it's freezing. It falls and sways faster at higher
+    // simulation speeds and hangs still while paused.
     const snowing = p.outdoor <= 0.5;
+    const step = f.dt * precipitationRate(f.speed);
+    this.snowClock += step;
     for (const s of this.snow) {
       s.g.visible = snowing;
       if (!snowing) continue;
-      s.y += s.v * f.dt;
+      s.y += s.v * step;
       if (s.y > lay.floorY - 6) {
         s.y = 0;
         s.x = this.wallEnd + 4 + Math.random() * (lay.W - this.wallEnd - 8);
       }
-      s.g.position.set(s.x + Math.sin(f.clock * 1.3 + s.v) * 3, s.y);
+      s.g.position.set(s.x + Math.sin(this.snowClock * 1.3 + s.v) * 3, s.y);
     }
 
     this.loftText.visible = f.hover?.kind === "loft";

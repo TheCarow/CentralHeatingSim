@@ -42,7 +42,9 @@ const DEFAULT_SPEED = 20;
   // Dev-only handle for poking at the simulation from the console.
   const devHandle = () => {
     if (import.meta.env.DEV)
-      Object.assign(window, { __heating: { sim, scene, chart, controls } });
+      Object.assign(window, {
+        __heating: { sim, scene, chart, controls, tooltip },
+      });
   };
   devHandle();
 
